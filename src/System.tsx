@@ -1280,7 +1280,7 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
 
   if (activeTab === "ranking") return <RankingView tasks={tasks} sectors={sectors} config={config} />;
-  if (activeTab === "stats") return <StatsView tasks={tasks} />;
+  if (activeTab === "stats") return <StatsView tasks={tasks} config={config} />;
   if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} />;
 
   if (activeTask) return <ActiveTaskView task={activeTask} config={config} onFinish={onFinishTask} />;
@@ -1321,11 +1321,13 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
     </div>
   );
 
+  const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
+
   const finishedToday = tasks.filter((t: any) => 
     t.userId === user.uid && 
     t.status === "approved" && 
     t.endTime?.toDate && 
-    t.endTime.toDate().toDateString() === new Date().toDateString()
+    t.endTime.toDate() > lastReset
   );
 
   const progressPercent = Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100);
@@ -1604,10 +1606,16 @@ function LoadingView({ config, onUpdateConfig, user }: any) {
                           totalTrucks: 0,
                           trucksAtDock: 0,
                           remessasSeparated: 0,
-                          trucksWaiting: 0
+                          trucksWaiting: 0,
+                          lastResetAt: serverTimestamp()
                         };
                         await onUpdateConfig(resetValues);
-                        setEditForm(resetValues);
+                        setEditForm({
+                          totalTrucks: 0,
+                          trucksAtDock: 0,
+                          remessasSeparated: 0,
+                          trucksWaiting: 0
+                        });
                         setIsEditing(false);
                       }
                     }}
@@ -1836,12 +1844,14 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
   if (activeTab === "ranking" || activeTab === "stats") return <RankingView tasks={tasks} sectors={sectors} config={config} />;
   if (activeTab === "history") return <HistoryView tasks={tasks} sectors={sectors} onDelete={onDeleteTask} />;
 
-  const inProgress = tasks.filter((t: any) => t.status === "in-progress");
-  const completed = tasks.filter((t: any) => t.status === "approved");
+  const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
+
+  const inProgress = tasks.filter((t: any) => t.status === "in-progress" && (!t.endTime || t.createdAt?.toDate() > lastReset));
+  const completed = tasks.filter((t: any) => t.status === "approved" && t.endTime?.toDate() > lastReset);
   
   // Shift Statistics
   const shiftStats = tasks.reduce((acc: any, t: any) => {
-    if (t.status === "approved" && t.userShift) {
+    if (t.status === "approved" && t.userShift && t.endTime?.toDate() > lastReset) {
       acc[t.userShift] = (acc[t.userShift] || 0) + 1;
     }
     return acc;
@@ -1849,9 +1859,9 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
 
   const barData = Object.entries(shiftStats).map(([name, value]) => ({ name, value }));
 
-  // Evolution Data (Last 7 hours or tasks)
+  // Evolution Data
   const evolutionData = tasks
-    .filter((t: any) => t.status === "approved" && t.endTime)
+    .filter((t: any) => t.status === "approved" && t.endTime?.toDate() > lastReset)
     .sort((a: any, b: any) => a.endTime.seconds - b.endTime.seconds)
     .slice(-10)
     .map((t: any, i: number) => ({
@@ -2222,8 +2232,12 @@ function RankingView({ tasks, sectors, config }: any) {
     );
   }
 
+  const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
+
   const approvedTasks = tasks.filter((t: any) => 
-    t.status === "approved" && config.rankingShifts.includes(t.userShift as Shift)
+    t.status === "approved" && 
+    config.rankingShifts.includes(t.userShift as Shift) &&
+    t.endTime?.toDate() > lastReset
   );
 
   const ranking = useMemo(() => {
@@ -2647,8 +2661,9 @@ function AdminManagement({ sectors, clients, config, onUpdateConfig }: any) {
   );
 }
 
-function StatsView({ tasks }: any) {
-  const approvedTasks = tasks.filter((t: any) => t.status === "approved");
+function StatsView({ tasks, config }: any) {
+  const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
+  const approvedTasks = tasks.filter((t: any) => t.status === "approved" && t.endTime?.toDate() > lastReset);
   
   const stats = useMemo(() => {
     const shiftStats = approvedTasks.reduce((acc: any, t: any) => {
