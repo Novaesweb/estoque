@@ -29,7 +29,13 @@ import {
   Trophy,
   Box,
   Bell,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Heart,
+  Trash2,
+  ShieldCheck,
+  User,
+  Lock,
+  ArrowRightCircle
 } from "lucide-react";
 
 // --- Firestore Error Handling ---
@@ -102,7 +108,7 @@ import firebaseConfig from "../firebase-applet-config.json";
 
 // --- Types ---
 type UserRole = "employee" | "supervisor" | "manager" | "admin";
-type TaskStatus = "in-progress" | "finished" | "approved" | "rejected";
+type TaskStatus = "in-progress" | "approved";
 type Shift = "Turno 1" | "Turno 2" | "Turno 3";
 
 interface AppConfig {
@@ -173,30 +179,39 @@ function NotificationManager({ user, enabled }: { user: UserProfile | null, enab
   const [notifications, setNotifications] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!user || !enabled) return;
+    if (!user?.uid || !enabled) {
+      setNotifications([]);
+      return;
+    }
 
-    const q = query(
-      collection(db, "users", user.uid, "notifications"),
-      orderBy("createdAt", "desc"),
-      limit(5)
-    );
+    try {
+      const q = query(
+        collection(db, "users", user.uid, "notifications"),
+        orderBy("createdAt", "desc"),
+        limit(5)
+      );
 
-    return onSnapshot(q, (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === "added") {
-          const data = change.doc.data();
-          if (data.createdAt?.toDate && (Date.now() - data.createdAt.toDate().getTime() < 10000)) {
-             try {
-                if ("Notification" in window && Notification.permission === "granted") {
-                    new Notification(data.title, { body: data.body });
-                }
-             } catch(e) {}
+      return onSnapshot(q, (snap) => {
+        snap.docChanges().forEach((change) => {
+          if (change.type === "added") {
+             const data = change.doc.data();
+             if (data.createdAt?.toDate && (Date.now() - data.createdAt.toDate().getTime() < 10000)) {
+                try {
+                   if ("Notification" in window && Notification.permission === "granted") {
+                       new Notification(data.title, { body: data.body });
+                   }
+                } catch(e) {}
+             }
           }
-        }
+        });
+        setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }, (err) => {
+         console.warn("Notifications listener error (likely permissions):", err);
       });
-      setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-  }, [user, enabled]);
+    } catch (err) {
+      console.error("Error setting up notifications listener:", err);
+    }
+  }, [user?.uid, enabled]);
 
   if (!user || !enabled || notifications.length === 0) return null;
 
@@ -244,6 +259,12 @@ function NotificationManager({ user, enabled }: { user: UserProfile | null, enab
 const Card = ({ children, className = "", ...props }: { children: React.ReactNode, className?: string, [key: string]: any }) => (
   <div {...props} className={`glass p-6 rounded-2xl bg-white/[0.02] border border-white/10 ${className}`}>
     {children}
+  </div>
+);
+
+const Skeleton = ({ className = "" }: { className?: string }) => (
+  <div className={`animate-pulse bg-white/[0.05] rounded-xl relative overflow-hidden ${className}`}>
+    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.05] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
   </div>
 );
 
@@ -380,7 +401,18 @@ export default function SystemApp() {
   useEffect(() => {
     // 1. Config & Sectors (Needed even before login or by everyone)
     const sectorsUnsub = onSnapshot(collection(db, "sectors"), (snap) => {
-      setSectors(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sector)));
+      const fetchedSectors = snap.docs.map(d => ({ id: d.id, ...d.data() } as Sector));
+      setSectors(fetchedSectors);
+      
+      // Seed required sectors if they don't exist
+      const required = ["Expedição", "Separação", "Recebimento"];
+      required.forEach(async (name) => {
+        if (!fetchedSectors.find(s => s.name === name)) {
+          try {
+            await addDoc(collection(db, "sectors"), { name, unit: "volumes" });
+          } catch(e) {}
+        }
+      });
     }, (err) => handleFirestoreError(err, OperationType.LIST, "sectors"));
 
     const configUnsub = onSnapshot(doc(db, "config", "general"), (doc) => {
@@ -552,12 +584,17 @@ export default function SystemApp() {
 
   const handleFinishTask = async (taskId: string, data: any) => {
     try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task && task.sectorName === "Expedição") {
+        await handleUpdateConfig({ remessasSeparated: Math.max(0, config.remessasSeparated - 1) });
+      }
+
       await updateDoc(doc(db, "tasks", taskId), {
         ...data,
-        status: "finished",
+        status: "approved",
         endTime: serverTimestamp()
       });
-      alert("Tarefa enviada para auditoria!");
+      alert("Operação finalizada com sucesso!");
       
       // Notify managers/admins (future: fetch admins, for now simplified notification to 'admin')
       // Note: In a real app we would loop through all users with role supervisor/manager/admin
@@ -566,46 +603,12 @@ export default function SystemApp() {
     }
   };
 
-  const handleApproveTask = async (task: any) => {
+  const handleDeleteTask = async (taskId: string) => {
+    if (!window.confirm("Tem certeza que deseja apagar permanentemente esta remessa?")) return;
     try {
-      await updateDoc(doc(db, "tasks", task.id), {
-        status: "approved",
-        approvedAt: serverTimestamp(),
-        approvedBy: currentUser?.name
-      });
-      
-      // Notify employee
-      await sendNotification(
-        task.userId,
-        "Tarefa Aprovada! ✅",
-        `Sua remessa #${task.remessa} foi validada com sucesso.`,
-        "approval",
-        task.id
-      );
+      await deleteDoc(doc(db, "tasks", taskId));
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.UPDATE, `tasks/${task.id}`);
-    }
-  };
-
-  const handleRejectTask = async (task: any, reason: string) => {
-    try {
-      await updateDoc(doc(db, "tasks", task.id), {
-        status: "rejected",
-        rejectionReason: reason,
-        approvedAt: serverTimestamp(),
-        approvedBy: currentUser?.name
-      });
-
-      // Notify employee
-      await sendNotification(
-        task.userId,
-        "Tarefa Recusada! ❌",
-        `A remessa #${task.remessa} foi recusada: ${reason}`,
-        "rejection",
-        task.id
-      );
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.UPDATE, `tasks/${task.id}`);
+      handleFirestoreError(err, OperationType.DELETE, `tasks/${taskId}`);
     }
   };
 
@@ -652,72 +655,118 @@ export default function SystemApp() {
   );
 
   if (view === "login") return (
-    <div className="min-h-screen bg-operarank-dark flex items-center justify-center p-6 sm:p-10">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl w-full items-center">
+    <div className="min-h-screen bg-operarank-dark flex items-center justify-center p-6 sm:p-10 relative overflow-hidden">
+      {/* Decorative Background Elements */}
+      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-operarank-accent/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-operarank-secondary/5 rounded-full blur-[120px] pointer-events-none" />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl w-full items-center relative z-10">
         {/* Left Column: Login Form */}
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="w-full max-w-sm mx-auto lg:mx-0">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md mx-auto lg:mx-0">
           <div className="text-center lg:text-left mb-10">
-            <div className="w-20 h-20 rounded-[2.5rem] bg-gradient-to-tr from-operarank-accent to-operarank-secondary flex items-center justify-center mx-auto lg:ml-0 mb-6 shadow-[0_15px_40px_rgba(99,102,241,0.4)]">
-              <TrendingUp size={40} className="text-white" />
+            <div className="flex items-center gap-4 mb-4 justify-center lg:justify-start">
+               <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-xl">
+                  <TrendingUp size={32} className="text-operarank-accent" />
+               </div>
+               <div>
+                  <h1 className="text-3xl font-black tracking-tighter uppercase leading-none">Opera<span className="text-operarank-accent">Rank</span></h1>
+                  <p className="text-[10px] text-white/30 uppercase tracking-[0.3em] font-black mt-1">Enterprise Solution</p>
+               </div>
             </div>
-            <h1 className="text-4xl font-black tracking-tighter uppercase mb-2">Opera<span className="text-operarank-accent">Rank</span></h1>
-            <p className="text-white/40 uppercase text-xs tracking-widest font-bold font-mono">Controle de Produtividade</p>
+            
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 mb-6">
+               <ShieldCheck size={12} />
+               <span className="text-[9px] font-black uppercase tracking-wider">Acesso Seguro & Criptografado</span>
+            </div>
           </div>
 
-          <Card>
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-black text-white/30 tracking-widest ml-1">Matrícula</label>
-                <input 
-                  name="id"
-                  value={loginForm.id}
-                  onChange={(e) => {
-                    const val = e.target.value.trim();
-                    setLoginForm({ ...loginForm, id: val });
-                    if (val) setLoginErrors({ ...loginErrors, id: "" });
-                  }}
-                  onBlur={() => {
-                    if (!loginForm.id) setLoginErrors({ ...loginErrors, id: "Campo obrigatório" });
-                  }}
-                  className={`w-full bg-white/5 border ${loginErrors.id ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-operarank-accent'} rounded-2xl px-5 py-4 focus:outline-none focus:bg-white/10 transition-all font-mono`} 
-                  placeholder="000XXX" 
-                />
-                {loginErrors.id && <p className="text-[10px] text-red-400 font-bold ml-1 uppercase">{loginErrors.id}</p>}
+          <Card className="p-8 border-white/10 bg-white/[0.03] backdrop-blur-2xl relative overflow-hidden group">
+            {/* Subtle gloss effect */}
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+            
+            <h2 className="text-xl font-bold mb-8 flex items-center gap-2">
+              Autenticação <span className="text-white/20 font-light">/ Login</span>
+            </h2>
+
+            <form onSubmit={handleLogin} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-black text-white/40 tracking-widest ml-1 flex items-center gap-2">
+                   <User size={10} className="text-operarank-accent" /> Matrícula do Colaborador
+                </label>
+                <div className="relative group">
+                  <input 
+                    name="id"
+                    value={loginForm.id}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      setLoginForm({ ...loginForm, id: val });
+                      if (val) setLoginErrors({ ...loginErrors, id: "" });
+                    }}
+                    onBlur={() => {
+                      if (!loginForm.id) setLoginErrors({ ...loginErrors, id: "Campo obrigatório" });
+                    }}
+                    className={`w-full bg-white/5 border ${loginErrors.id ? 'border-red-500/50' : 'border-white/10 group-focus-within:border-operarank-accent/50'} rounded-2xl px-5 py-4 focus:outline-none focus:bg-white/[0.08] transition-all font-mono text-sm tracking-widest`} 
+                    placeholder="Ex: 123456" 
+                  />
+                </div>
+                {loginErrors.id && <p className="text-[9px] text-red-400 font-bold ml-1 uppercase tracking-tighter">{loginErrors.id}</p>}
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-black text-white/30 tracking-widest ml-1">Senha</label>
-                <input 
-                  name="password"
-                  type="password" 
-                  value={loginForm.password}
-                  onChange={(e) => {
-                    setLoginForm({ ...loginForm, password: e.target.value });
-                    if (e.target.value.length >= 6) setLoginErrors({ ...loginErrors, password: "" });
-                  }}
-                  onBlur={() => {
-                    if (!loginForm.password) setLoginErrors({ ...loginErrors, password: "Campo obrigatório" });
-                    else if (loginForm.password.length < 6) setLoginErrors({ ...loginErrors, password: "Mínimo 6 caracteres" });
-                  }}
-                  className={`w-full bg-white/5 border ${loginErrors.password ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-operarank-accent'} rounded-2xl px-5 py-4 focus:outline-none focus:bg-white/10 transition-all font-mono`} 
-                  placeholder="••••••••" 
-                />
-                {loginErrors.password && <p className="text-[10px] text-red-400 font-bold ml-1 uppercase">{loginErrors.password}</p>}
+
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-black text-white/40 tracking-widest ml-1 flex items-center gap-2">
+                   <Lock size={10} className="text-operarank-accent" /> Senha de Acesso
+                </label>
+                <div className="relative group">
+                  <input 
+                    name="password"
+                    type="password" 
+                    value={loginForm.password}
+                    onChange={(e) => {
+                      setLoginForm({ ...loginForm, password: e.target.value });
+                      if (e.target.value.length >= 6) setLoginErrors({ ...loginErrors, password: "" });
+                    }}
+                    onBlur={() => {
+                      if (!loginForm.password) setLoginErrors({ ...loginErrors, password: "Campo obrigatório" });
+                      else if (loginForm.password.length < 6) setLoginErrors({ ...loginErrors, password: "Mínimo 6 caracteres" });
+                    }}
+                    className={`w-full bg-white/5 border ${loginErrors.password ? 'border-red-500/50' : 'border-white/10 group-focus-within:border-operarank-accent/50'} rounded-2xl px-5 py-4 focus:outline-none focus:bg-white/[0.08] transition-all font-mono text-sm tracking-widest`} 
+                    placeholder="••••••••" 
+                  />
+                </div>
+                {loginErrors.password && <p className="text-[9px] text-red-400 font-bold ml-1 uppercase tracking-tighter">{loginErrors.password}</p>}
               </div>
               
               {authError && (
-                <p className="text-xs text-red-500 font-bold text-center bg-red-500/10 py-2 rounded-lg animate-pulse">{authError}</p>
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3"
+                >
+                  <AlertCircle size={14} className="text-red-500 shrink-0" />
+                  <p className="text-[11px] text-red-200 font-medium leading-tight">{authError}</p>
+                </motion.div>
               )}
 
-              <Button type="submit" loading={loginLoading} className="w-full py-5">Entrar no Sistema</Button>
+              <Button type="submit" loading={loginLoading} className="w-full py-5 group">
+                Acessar Painel
+                <ArrowRightCircle size={18} className="transition-transform group-hover:translate-x-1" />
+              </Button>
             </form>
 
-            <button 
-              onClick={handleCreateInitialAdmin}
-              className="w-full mt-6 py-2 border border-white/10 rounded-xl text-[9px] font-black uppercase tracking-widest text-white/20 hover:text-operarank-accent transition-colors"
-            >
-              Configurar Primeiro Acesso
-            </button>
+            <div className="mt-8 pt-6 border-t border-white/5 flex flex-col gap-4">
+              <div className="flex items-center justify-between px-2">
+                 <div className="flex items-center gap-2 text-white/20">
+                    <ShieldCheck size={12} />
+                    <span className="text-[8px] font-bold uppercase tracking-widest">Protocolo SSL Ativo</span>
+                 </div>
+                 <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+              </div>
+            </div>
           </Card>
+
+          <p className="mt-8 text-center lg:text-left text-[9px] text-white/10 font-bold uppercase tracking-[0.2em]">
+            © 2026 OperaRank Infrastructure • Todos os direitos reservados
+          </p>
         </motion.div>
 
         {/* Right Column: Dynamic Content (Ranking or Status) */}
@@ -923,21 +972,29 @@ export default function SystemApp() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="py-20 flex flex-col items-center justify-center gap-6"
+              className="space-y-8"
             >
-              <div className="relative">
-                <motion.div 
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                  className="w-12 h-12 border-2 border-operarank-accent border-t-transparent rounded-full shadow-[0_0_20px_rgba(99,102,241,0.3)]"
-                />
-                <motion.div 
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute inset-0 bg-operarank-accent/10 rounded-full blur-xl"
-                />
+              <div className="flex items-center justify-between px-2">
+                <Skeleton className="w-48 h-8 rounded-full" />
+                <Skeleton className="w-24 h-6 rounded-lg" />
               </div>
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/20 animate-pulse">Carregando interface</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Skeleton className="h-32 rounded-2xl" />
+                <Skeleton className="h-32 rounded-2xl" />
+                <Skeleton className="h-32 rounded-2xl" />
+                <Skeleton className="h-32 rounded-2xl" />
+              </div>
+              <div className="space-y-4">
+                <Skeleton className="h-10 rounded-2xl" />
+                <Skeleton className="h-32 rounded-2xl" />
+                <Skeleton className="h-10 rounded-2xl w-32" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Skeleton className="h-24 rounded-2xl" />
+                  <Skeleton className="h-24 rounded-2xl" />
+                  <Skeleton className="h-24 rounded-2xl" />
+                  <Skeleton className="h-24 rounded-2xl" />
+                </div>
+              </div>
             </motion.div>
           ) : currentUser?.role === "employee" ? (
             <EmployeeDashboard 
@@ -949,6 +1006,7 @@ export default function SystemApp() {
               onStartTask={handleStartTask}
               onFinishTask={handleFinishTask}
               onUpdateConfig={handleUpdateConfig}
+              onDeleteTask={handleDeleteTask}
               tasks={tasks}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
@@ -961,17 +1019,27 @@ export default function SystemApp() {
               clients={clients}
               config={config}
               onUpdateConfig={handleUpdateConfig}
-              onApproveTask={handleApproveTask}
-              onRejectTask={handleRejectTask}
+              onDeleteTask={handleDeleteTask}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
             />
           )}
         </AnimatePresence>
         <footer className="mt-12 mb-8 text-center">
-          <p className="text-[8px] uppercase font-black tracking-[0.3em] text-white/10 uppercase">
-            Feito por <span className="text-operarank-accent opacity-40">novaesweb</span>
-          </p>
+          <a 
+            href="https://www.novaesweb.site/" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="group flex items-center justify-center gap-1.5 transition-all hover:scale-105"
+          >
+            <p className="text-[8px] uppercase font-black tracking-[0.3em] text-white/10 group-hover:text-white/20 transition-colors">
+              Feito com 
+            </p>
+            <Heart size={10} className="text-red-500/40 group-hover:text-red-500 fill-red-500/10 group-hover:fill-red-500 transition-all" />
+            <p className="text-[8px] uppercase font-black tracking-[0.3em] text-white/10 group-hover:text-white/20 transition-colors">
+              NovaesWeb
+            </p>
+          </a>
         </footer>
       </main>
       <NotificationManager user={currentUser} enabled={config.notificationsEnabled} />
@@ -1031,7 +1099,7 @@ const SidebarButton = ({ active, onClick, icon, label, collapsed }: any) => (
 
 // --- DASHBOARDS ---
 
-function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTask, onUpdateConfig, tasks, clients, config, activeTab, setActiveTab }: any) {
+function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTask, onUpdateConfig, onDeleteTask, tasks, clients, config, activeTab, setActiveTab }: any) {
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
 
   if (activeTab === "ranking") return <RankingView tasks={tasks} sectors={sectors} config={config} />;
@@ -1076,74 +1144,101 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
   );
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-      <div className="bg-gradient-to-br from-operarank-accent/10 via-transparent to-white/5 p-6 rounded-[2rem] border border-white/10 relative overflow-hidden">
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-operarank-accent/10 blur-[80px]" />
-        <h3 className="font-black text-2xl mb-2 uppercase tracking-tighter">Olá, {user.name.split(' ')[0]}!</h3>
-        <p className="text-xs text-white/40 uppercase tracking-widest font-bold">Unidade Operacional • {user.shift}</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 pb-24">
+      <LiveTicker tasks={tasks} />
+
+      <div className="bg-gradient-to-br from-operarank-accent/10 via-transparent to-white/5 p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden group">
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-operarank-accent/10 blur-[80px] group-hover:bg-operarank-accent/20 transition-all" />
+        <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-black text-3xl mb-1 uppercase tracking-tighter">Olá, {user.name.split(' ')[0]}!</h3>
+              <p className="text-xs text-white/40 uppercase tracking-widest font-black leading-none">Unidade Operacional • {user.shift}</p>
+            </div>
+            <div className="p-3 bg-white/5 rounded-2xl border border-white/10 text-operarank-accent">
+                <User size={24} />
+            </div>
+        </div>
         
-        {!config.rankingVisible && (
-          <div className="mt-6 flex items-center gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
-            <TrendingUp size={16} className="text-white/20" />
-            <p className="text-[10px] text-white/30 uppercase font-black">Ranking em processamento pelo gestor...</p>
+        <div className="mt-8 flex items-center gap-3 bg-white/5 p-5 rounded-[2rem] border border-white/5 backdrop-blur-sm group cursor-pointer hover:bg-white/[0.08] transition-all" onClick={() => setActiveTab("loading")}>
+          <div className="w-10 h-10 rounded-xl bg-operarank-accent/10 flex items-center justify-center text-operarank-accent">
+             <BarChart3 size={20} />
           </div>
-        )}
+          <div className="flex-1">
+             <div className="flex justify-between items-center mb-1">
+                <p className="text-[9px] text-white/30 uppercase font-black tracking-widest">Meta de Carregamento</p>
+                <p className="text-[10px] text-operarank-accent font-black tracking-tighter">
+                  {config.remessasSeparated} <span className="text-white/20">/ {config.totalTrucks || 0}</span>
+                </p>
+             </div>
+             <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, (config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%` }}
+                  className="h-full bg-gradient-to-r from-operarank-accent to-operarank-secondary"
+                />
+             </div>
+          </div>
+          <div className="text-right">
+             <p className="text-[10px] font-black text-white/40">{Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%</p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         <motion.button 
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => {
             const el = document.getElementById("sector-selection");
             el?.scrollIntoView({ behavior: 'smooth' });
           }}
-          className="w-full py-6 bg-operarank-accent rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(99,102,241,0.3)] flex items-center justify-center gap-3"
+          className="w-full py-8 bg-operarank-accent rounded-[2.5rem] font-black uppercase tracking-[0.2em] shadow-[0_20px_50px_rgba(99,102,241,0.4)] flex items-center justify-center gap-3 active:shadow-inner transition-all hover:brightness-110"
         >
           <Play size={20} fill="currentColor" /> Registrar Tarefa
         </motion.button>
       </div>
 
       <div id="sector-selection" className="grid grid-cols-2 gap-3">
-        {sectors.map((s: any) => (
-          <motion.button 
-            whileHover={{ scale: 1.05, borderColor: "rgba(99,102,241,0.5)" }}
-            whileTap={{ scale: 0.95 }}
-            key={s.id} 
-            onClick={() => setSelectedSector(s)}
-            className="p-4 glass rounded-2xl flex flex-col items-center gap-2 text-center group transition-all border border-white/5"
-          >
-            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:scale-110 transition-all text-operarank-secondary">
-              {s.name.toLowerCase().includes("empilhadeira") ? <Zap size={20} /> : <Box size={20} />}
-            </div>
-            <span className="text-[9px] font-black uppercase tracking-widest leading-tight">{s.name}</span>
-          </motion.button>
-        ))}
+        {["Expedição", "Separação", "Recebimento"].map((name) => {
+          const s = sectors.find((sect: any) => sect.name === name);
+          if (!s) return null;
+          return (
+            <motion.button 
+              whileHover={{ scale: 1.05, borderColor: "rgba(99,102,241,0.5)", backgroundColor: "rgba(255,255,255,0.05)" }}
+              whileTap={{ scale: 0.95 }}
+              key={s.id} 
+              onClick={() => setSelectedSector(s)}
+              className="p-5 glass rounded-[2rem] flex flex-col items-center gap-3 text-center group transition-all border border-white/5"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-operarank-accent/10 group-hover:text-operarank-accent transition-all text-operarank-secondary">
+                {s.name.toLowerCase().includes("empilhadeira") ? <Zap size={24} /> : <Box size={24} />}
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest leading-tight opacity-70 group-hover:opacity-100 transition-opacity">{s.name}</span>
+            </motion.button>
+          );
+        })}
       </div>
 
-      <div>
-        <h4 className="text-[10px] uppercase font-black tracking-widest text-white/30 mb-4 px-2">Suas Atividades</h4>
-        <div className="space-y-3">
-          {tasks.filter((t: any) => t.userId === user.uid).slice(0, 5).map((t: any) => (
-            <div key={t.id} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between group">
-              <div className="flex items-center gap-3">
-                <StatusBadge status={t.status} />
-                <div>
-                  <p className="text-sm font-bold">Remessa {t.remessa}</p>
-                  {t.status !== "finished" && t.status !== "approved" && (
-                    <p className="text-[9px] text-white/30 uppercase font-bold">{t.sectorName}</p>
-                  )}
-                </div>
-              </div>
-              <div className="text-right">
-                {t.status !== "approved" && (
-                  <p className="text-xs font-mono font-black text-operarank-secondary">{t.quantity} <span className="text-[8px] opacity-40">{t.unit}</span></p>
-                )}
-              </div>
-            </div>
+      <div className="mt-10">
+        <div className="flex items-center gap-3 mb-8 px-2">
+            <h4 className="text-[10px] uppercase font-black tracking-widest text-white/30 whitespace-nowrap">Suas Atividades</h4>
+            <div className="flex-1 h-[1px] bg-white/5" />
+        </div>
+        <div className="space-y-4">
+          {tasks.filter((t: any) => t.userId === user.uid).slice(0, 5).map((t: any, index: number) => (
+            <TaskListItem 
+                key={t.id} 
+                task={t} 
+                index={index}
+                isAdmin={user.role === "admin" || user.role === "manager" || user.role === "supervisor"}
+                onDelete={onDeleteTask}
+            />
           ))}
           {tasks.filter((t: any) => t.userId === user.uid).length === 0 && (
-            <div className="text-center py-8 text-white/10 text-[10px] uppercase font-black tracking-widest italic">Nenhuma atividade registrada hoje</div>
+              <div className="p-16 text-center border-2 border-dashed border-white/5 rounded-[2.5rem] bg-white/[0.01]">
+                <Package size={48} className="text-white/[0.02] mx-auto mb-6" />
+                <p className="text-[10px] uppercase font-black text-white/20 tracking-widest leading-relaxed">Prepare sua primeira remessa<br/>para iniciar o dia.</p>
+              </div>
           )}
         </div>
       </div>
@@ -1151,7 +1246,7 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
   );
 }
 
-// --- Loading View ---
+// --- Loading/Goals View ---
 function LoadingView({ config, onUpdateConfig, user }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -1177,18 +1272,24 @@ function LoadingView({ config, onUpdateConfig, user }: any) {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 pb-20">
-      <div className="flex items-center justify-between mb-2 px-2">
-        <div className="flex items-center gap-3">
-          <div className="w-1.5 h-6 bg-operarank-accent rounded-full" />
-          <h3 className="text-xl font-black uppercase tracking-tighter">Carregamento do Dia</h3>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
+      <div className="flex items-center justify-between px-2">
+        <div className="flex items-center gap-4">
+           <div className="w-12 h-12 rounded-2xl bg-operarank-accent/10 flex items-center justify-center text-operarank-accent">
+              <BarChart3 size={24} />
+           </div>
+           <div>
+              <h3 className="text-2xl font-black uppercase tracking-tighter">Meta de Carregamento</h3>
+              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Planejamento Diário da Expedição</p>
+           </div>
         </div>
         {(user.role === "admin" || user.role === "manager") && (
           <button 
             onClick={() => setIsEditing(!isEditing)}
-            className="text-[10px] font-black uppercase tracking-widest text-operarank-accent border border-operarank-accent/20 px-3 py-1 rounded-lg hover:bg-operarank-accent/10 transition-all"
+            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-operarank-accent border border-operarank-accent/20 px-4 py-2 rounded-xl hover:bg-operarank-accent/10 transition-all backdrop-blur-xl"
           >
-            {isEditing ? "Cancelar" : "Editar"}
+            {isEditing ? <XCircle size={14} /> : <Settings size={14} />}
+            {isEditing ? "Fechar" : "Gerenciar"}
           </button>
         )}
       </div>
@@ -1196,139 +1297,193 @@ function LoadingView({ config, onUpdateConfig, user }: any) {
       <AnimatePresence>
         {isEditing && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ height: 0, opacity: 0, y: -20 }}
+            animate={{ height: "auto", opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: -20 }}
             className="overflow-hidden"
           >
-            <Card className="mb-6 border-operarank-accent/30 bg-operarank-accent/[0.02]">
-              <form onSubmit={handleSave} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+            <Card className="mb-6 border-operarank-accent/30 bg-operarank-accent/[0.02] shadow-[0_20px_50px_rgba(0,0,0,0.2)]">
+              <form onSubmit={handleSave} className="space-y-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-white/30 tracking-widest ml-1">Total Previsto</label>
+                    <label className="text-[9px] uppercase font-black text-white/40 tracking-widest ml-1">Total Hoje</label>
                     <input 
                       type="number"
                       value={editForm.totalTrucks}
                       onChange={e => setEditForm({...editForm, totalTrucks: Number(e.target.value)})}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 outline-none focus:border-operarank-accent"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-operarank-accent font-bold"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-white/30 tracking-widest ml-1">Na Doca</label>
+                    <label className="text-[9px] uppercase font-black text-white/40 tracking-widest ml-1">Em Doca</label>
                     <input 
                       type="number"
                       value={editForm.trucksAtDock}
                       onChange={e => setEditForm({...editForm, trucksAtDock: Number(e.target.value)})}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 outline-none focus:border-operarank-accent"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-operarank-accent font-bold"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-white/30 tracking-widest ml-1">Separados</label>
+                    <label className="text-[9px] uppercase font-black text-white/40 tracking-widest ml-1">Separados</label>
                     <input 
                       type="number"
                       value={editForm.remessasSeparated}
                       onChange={e => setEditForm({...editForm, remessasSeparated: Number(e.target.value)})}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 outline-none focus:border-operarank-accent"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-operarank-accent font-bold"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-white/30 tracking-widest ml-1">Na Rua</label>
+                    <label className="text-[9px] uppercase font-black text-white/40 tracking-widest ml-1">Na Rua (Fila)</label>
                     <input 
                       type="number"
                       value={editForm.trucksWaiting}
                       onChange={e => setEditForm({...editForm, trucksWaiting: Number(e.target.value)})}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 outline-none focus:border-operarank-accent"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-operarank-accent font-bold"
                     />
                   </div>
                 </div>
-                <Button type="submit" className="w-full py-3">Salvar Atualização</Button>
+                <Button type="submit" className="w-full py-4 shadow-xl">Confirmar Planejamento</Button>
               </form>
             </Card>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="bg-blue-500/10 border-blue-500/20 p-6 flex flex-col items-center text-center">
-          <TruckIcon className="text-blue-500 mb-3" size={32} />
-          <h4 className="text-4xl font-black text-blue-500">{stats.total}</h4>
-          <p className="text-[10px] uppercase font-black text-white/40 tracking-widest mt-1">Total Hoje</p>
-        </Card>
-
-        <Card className="bg-green-500/10 border-green-500/20 p-6 flex flex-col items-center text-center">
-          <CheckCircle2 className="text-green-500 mb-3" size={32} />
-          <h4 className="text-4xl font-black text-green-500">{stats.separated}</h4>
-          <p className="text-[10px] uppercase font-black text-white/40 tracking-widest mt-1">Separados</p>
-        </Card>
-
-        <Card className="bg-yellow-500/10 border-yellow-500/20 p-6 flex flex-col items-center text-center">
-          <Clock className="text-yellow-500 mb-3" size={32} />
-          <h4 className="text-4xl font-black text-yellow-500">{stats.street}</h4>
-          <p className="text-[10px] uppercase font-black text-white/40 tracking-widest mt-1">Na Rua</p>
-        </Card>
-
-        <Card className="bg-orange-500/10 border-orange-500/20 p-6 flex flex-col items-center text-center">
-          <Zap className="text-orange-500 mb-3" size={32} />
-          <h4 className="text-4xl font-black text-orange-500">{stats.dock}</h4>
-          <p className="text-[10px] uppercase font-black text-white/40 tracking-widest mt-1">Na Doca</p>
-        </Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Planejado", val: stats.total, icon: <TruckIcon />, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20" },
+          { label: "Cargas Separadas", val: stats.separated, icon: <CheckCircle2 />, color: "text-green-400", bg: "bg-green-400/10", border: "border-green-400/20" },
+          { label: "Aguardando Rua", val: stats.street, icon: <Clock />, color: "text-yellow-400", bg: "bg-yellow-400/10", border: "border-yellow-400/20" },
+          { label: "Em Operação", val: stats.dock, icon: <Zap />, color: "text-orange-400", bg: "bg-orange-400/10", border: "border-orange-400/20" },
+        ].map((item, i) => (
+          <Card key={i} className={`${item.bg} ${item.border} p-6 flex flex-col items-center text-center group hover:scale-105 transition-all duration-300`}>
+            <div className={`${item.color} mb-3 group-hover:scale-110 transition-transform`}>
+              {React.cloneElement(item.icon as React.ReactElement, { size: 24 })}
+            </div>
+            <h4 className={`text-4xl font-black ${item.color} mb-1`}>{item.val}</h4>
+            <p className="text-[9px] uppercase font-black text-white/30 tracking-widest leading-none">{item.label}</p>
+          </Card>
+        ))}
       </div>
 
-      <Card className="p-6 bg-white/5">
-        <div className="flex justify-between items-end mb-4">
-          <div>
-            <p className="text-[10px] uppercase font-black text-white/30 tracking-widest mb-1">Progresso Total</p>
-            <h4 className="text-2xl font-black text-white">{Math.round(progressTotal)}% Concluído</h4>
+      <Card className="p-8 bg-white/[0.03] border-white/10 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-operarank-accent/5 blur-[100px] pointer-events-none" />
+        
+        <div className="flex flex-col sm:flex-row justify-between items-end gap-6 mb-8">
+          <div className="w-full sm:w-auto">
+            <p className="text-[10px] uppercase font-black text-white/40 tracking-[0.2em] mb-2 flex items-center gap-2">
+               <Trophy size={14} className="text-yellow-400" /> Rendimento Geral do Turno
+            </p>
+            <h4 className="text-4xl font-black text-white tracking-tighter">
+              {Math.round(progressTotal)}% <span className="text-lg text-white/20 font-light translate-y-[-2px] inline-block uppercase ml-2 tracking-widest">Concluído</span>
+            </h4>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-black text-operarank-accent">{stats.separated} de {stats.total}</p>
+          <div className="text-right w-full sm:w-auto px-6 py-4 rounded-3xl bg-white/[0.03] border border-white/5 backdrop-blur-xl">
+             <p className="text-[9px] uppercase font-black text-white/20 tracking-widest mb-1">Status da Meta</p>
+             <p className="text-xl font-mono font-black text-operarank-accent">{stats.separated} <span className="text-xs text-white/20">/ {stats.total}</span></p>
           </div>
         </div>
-        <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden border border-white/10">
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: `${progressTotal}%` }}
-            transition={{ duration: 1.5, ease: "easeOut" }}
-            className="h-full bg-gradient-to-r from-operarank-accent to-operarank-secondary shadow-[0_0_20px_rgba(99,102,241,0.4)]"
-          />
+
+        <div className="relative pt-4">
+          <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden border border-white/10 p-0.5">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${progressTotal}%` }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className="h-full bg-gradient-to-r from-operarank-accent via-operarank-secondary to-operarank-pink rounded-full relative shadow-[0_0_20px_rgba(99,102,241,0.5)]"
+            >
+               <div className="absolute inset-0 bg-white/20 opacity-30 animate-pulse" />
+            </motion.div>
+          </div>
+          
+          <div className="flex justify-between mt-4">
+             <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-operarank-accent" />
+                <span className="text-[9px] uppercase font-black text-white/20 tracking-widest">Saída 06:00</span>
+             </div>
+             <div className="flex items-center gap-2">
+                <span className="text-[9px] uppercase font-black text-white/20 tracking-widest">Meta 100%</span>
+                <div className="w-2 h-2 rounded-full bg-white/10" />
+             </div>
+          </div>
         </div>
       </Card>
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-500 font-black">{stats.total}</div>
-          <div className="flex-1">
-            <p className="text-xs font-bold text-white tracking-tight">Total de caminhões previstos</p>
-            <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Planejamento Diário</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[
+          { label: "Total Previsto", desc: "Caminhões programados para hoje", val: stats.total, color: "text-blue-400", bg: "bg-blue-400/20" },
+          { label: "Operação Ativa", desc: "Caminhões sendo carregados agora", val: stats.dock, color: "text-orange-400", bg: "bg-orange-400/20" },
+          { label: "Buffer de Carga", desc: "Remessas prontas aguardando doca", val: stats.separated, color: "text-green-400", bg: "bg-green-400/20" },
+          { label: "Fila de Espera", desc: "Caminhões aguardando área externa", val: stats.street, color: "text-yellow-400", bg: "bg-yellow-400/20" },
+        ].map((row, i) => (
+          <div key={i} className="flex items-center gap-4 p-5 bg-white/[0.02] rounded-3xl border border-white/5 hover:bg-white/[0.05] transition-all group">
+            <div className={`w-12 h-12 rounded-2xl ${row.bg} flex items-center justify-center ${row.color} font-black text-lg group-hover:scale-110 transition-transform`}>{row.val}</div>
+            <div className="flex-1">
+              <p className="text-sm font-black text-white tracking-tight">{row.label}</p>
+              <p className="text-[9px] text-white/40 uppercase font-bold tracking-widest">{row.desc}</p>
+            </div>
+            <ArrowRight size={16} className="text-white/5 group-hover:text-white/20 transition-colors" />
           </div>
-        </div>
-        <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
-          <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-500 font-black">{stats.dock}</div>
-          <div className="flex-1">
-            <p className="text-xs font-bold text-white tracking-tight">Caminhões em carregamento (Doca)</p>
-            <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Operação Ativa</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
-          <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center text-green-500 font-black">{stats.separated}</div>
-          <div className="flex-1">
-            <p className="text-xs font-bold text-white tracking-tight">Remessas prontas para embarque</p>
-            <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Buffer de Carga</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
-          <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-yellow-500 font-black">{stats.street}</div>
-          <div className="flex-1">
-            <p className="text-xs font-bold text-white tracking-tight">Caminhões aguardando na rua</p>
-            <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Fila de Espera</p>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function TaskListItem({ task, isAdmin, onApprove, onReject }: any) {
+function LiveTicker({ tasks }: { tasks: any[] }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const recentEvents = tasks
+    .filter(t => t.status === "approved" || t.status === "finished")
+    .sort((a, b) => (b.updatedAt?.toDate?.() || 0) - (a.updatedAt?.toDate?.() || 0))
+    .slice(0, 10);
+
+  useEffect(() => {
+    if (recentEvents.length === 0) return;
+    const interval = setInterval(() => {
+      setCurrentIndex(prev => (prev + 1) % recentEvents.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [recentEvents.length]);
+
+  if (recentEvents.length === 0) return (
+    <div className="h-10 bg-white/5 rounded-2xl flex items-center px-4 overflow-hidden border border-white/10 mb-6">
+      <div className="flex items-center gap-2">
+        <div className="w-1.5 h-1.5 rounded-full bg-operarank-accent animate-pulse" />
+        <span className="text-[9px] font-black uppercase tracking-widest text-white/30">Sistema Operacional Online • Sem atividades recentes</span>
+      </div>
+    </div>
+  );
+
+  const event = recentEvents[currentIndex];
+
+  return (
+    <div className="h-10 bg-operarank-accent/10 rounded-2xl flex items-center px-4 overflow-hidden border border-operarank-accent/20 mb-6 relative group">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentIndex}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -20, opacity: 0 }}
+          className="flex items-center gap-3 w-full"
+        >
+          <div className="bg-operarank-accent p-1.5 rounded-lg shrink-0">
+            <Trophy size={10} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold text-white truncate">
+                <span className="text-operarank-accent italic uppercase font-black mr-1">{event.userName}</span>
+                {event.status === "approved" ? "finalizou com sucesso" : "enviou para auditoria"} a remessa 
+                <span className="font-mono text-white/60 ml-1">#{event.remessa}</span>
+            </p>
+          </div>
+          <p className="text-[8px] font-black uppercase text-white/20 whitespace-nowrap hidden sm:block">Agorinha</p>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function TaskListItem({ task, isAdmin, onDelete, index = 0 }: any) {
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
@@ -1341,23 +1496,48 @@ function TaskListItem({ task, isAdmin, onApprove, onReject }: any) {
   }, [task]);
 
   return (
-    <div className="p-5 rounded-2xl border transition-all bg-white/[0.03] border-white/5 hover:border-white/10 group">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+      className="p-5 rounded-3xl border transition-all bg-white/[0.03] border-white/5 hover:border-white/10 hover:bg-white/[0.05] group relative overflow-hidden"
+    >
+      {task.status === "in-progress" && (
+        <div className="absolute top-0 right-0 w-32 h-32 bg-operarank-accent/5 blur-3xl -z-10 group-hover:bg-operarank-accent/10 transition-all" />
+      )}
+      
       <div className="flex justify-between items-center mb-4">
         <StatusBadge status={task.status} />
-        <span className="text-[9px] font-mono text-white/20 uppercase flex items-center gap-2">
-          {task.startTime?.toDate ? format(task.startTime.toDate(), "HH:mm") : "??:??"} 
-          {task.endTime?.toDate ? ` → ${format(task.endTime.toDate(), "HH:mm")}` : ""}
-          {task.status === "in-progress" && (
-            <span className="text-operarank-accent font-black">({timer} min)</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[9px] font-mono text-white/20 uppercase flex items-center gap-2">
+            {task.startTime?.toDate ? format(task.startTime.toDate(), "HH:mm") : "??:??"} 
+            {task.endTime?.toDate ? ` → ${format(task.endTime.toDate(), "HH:mm")}` : ""}
+            {task.status === "in-progress" && (
+              <span className="text-operarank-accent font-black animate-pulse">({timer} min)</span>
+            )}
+          </span>
+          {isAdmin && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(task.id);
+              }}
+              className="p-1.5 bg-red-500/10 text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+            >
+              <Trash2 size={12} />
+            </button>
           )}
-        </span>
+        </div>
       </div>
       <div className="flex justify-between items-end">
         <div>
-          <h5 className="text-2xl font-black font-mono">#{task.remessa}</h5>
+          <h5 className="text-2xl font-black font-mono group-hover:text-operarank-accent transition-colors">#{task.remessa}</h5>
           <p className="text-[10px] text-white/40 uppercase font-black">{task.userName} • {task.sectorName}</p>
           {task.quantity > 0 && (
-            <p className="text-[10px] text-operarank-accent font-bold uppercase mt-1">{task.quantity} {task.unit}</p>
+            <p className="text-[10px] text-operarank-accent font-bold uppercase mt-1 flex items-center gap-1">
+                <Box size={10} />
+                {task.quantity} {task.unit}
+            </p>
           )}
         </div>
         <div className="text-right">
@@ -1370,39 +1550,20 @@ function TaskListItem({ task, isAdmin, onApprove, onReject }: any) {
         </div>
       </div>
 
-      {isAdmin && task.status === "finished" && (
-        <div className="mt-6 pt-4 border-t border-white/5 flex gap-2">
-          <button 
-            onClick={() => onApprove(task)}
-            className="flex-1 bg-green-500/20 text-green-400 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-green-500/30 transition-all flex items-center justify-center gap-2"
-          >
-            <CheckCircle2 size={12} /> Aprovar
-          </button>
-          <button 
-            onClick={() => {
-               const reason = prompt("Motivo da recusa:");
-               if(reason) onReject(task, reason);
-            }}
-            className="flex-1 bg-red-500/20 text-red-100 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500/30 transition-all flex items-center justify-center gap-2"
-          >
-            <XCircle size={12} /> Recusar
-          </button>
-        </div>
-      )}
-    </div>
+      {/* Approval buttons removed per requirement */}
+    </motion.div>
   );
 }
 
-function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig, onApproveTask, onRejectTask, activeTab, setActiveTab }: any) {
+function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig, onDeleteTask, activeTab, setActiveTab }: any) {
   const [searchActive, setSearchActive] = useState("");
 
   if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} />;
   if (activeTab === "manage") return <AdminManagement sectors={sectors} clients={clients} config={config} onUpdateConfig={onUpdateConfig} />;
   if (activeTab === "ranking" || activeTab === "stats") return <RankingView tasks={tasks} sectors={sectors} config={config} />;
-  if (activeTab === "history") return <HistoryView tasks={tasks} sectors={sectors} />;
+  if (activeTab === "history") return <HistoryView tasks={tasks} sectors={sectors} onDelete={onDeleteTask} />;
 
   const inProgress = tasks.filter((t: any) => t.status === "in-progress");
-  const pendingAudit = tasks.filter((t: any) => t.status === "finished");
   const completed = tasks.filter((t: any) => t.status === "approved");
 
   const filteredTasks = tasks.filter((t: any) => {
@@ -1414,59 +1575,86 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
       t.sectorName.toLowerCase().includes(search)
     );
   }).sort((a: any, b: any) => {
-    // Show finished tasks first, then order by date
-    if (a.status === "finished" && b.status !== "finished") return -1;
-    if (a.status !== "finished" && b.status === "finished") return 1;
     return 0;
   }).slice(0, 20); 
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 pb-20">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Card className="flex flex-col items-center justify-center text-center p-4">
-          <p className="text-[9px] uppercase font-black text-white/30 tracking-widest mb-1">Em Curso</p>
-          <h4 className="text-3xl font-black">{inProgress.length}</h4>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
+      <LiveTicker tasks={tasks} />
+
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="flex flex-col items-center justify-center text-center p-6 bg-white/[0.02] border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all cursor-default group">
+          <p className="text-[9px] uppercase font-black text-white/30 tracking-widest mb-1 group-hover:text-white/50 transition-colors">Em Curso</p>
+          <h4 className="text-4xl font-black">{inProgress.length}</h4>
+          <div className="w-8 h-1 bg-operarank-accent/20 rounded-full mt-2" />
         </Card>
-        <Card className="flex flex-col items-center justify-center text-center p-4 border-orange-500/20">
-          <p className="text-[9px] uppercase font-black text-orange-500/50 tracking-widest mb-1">Auditoria</p>
-          <h4 className="text-3xl font-black text-orange-500">{pendingAudit.length}</h4>
-        </Card>
-        <Card className="flex flex-col items-center justify-center text-center p-4 col-span-2 md:col-span-1">
-          <p className="text-[9px] uppercase font-black text-white/30 tracking-widest mb-1">Finalizadas</p>
-          <h4 className="text-3xl font-black text-operarank-accent">{completed.length}</h4>
+        <Card className="flex flex-col items-center justify-center text-center p-6 bg-white/[0.02] border-white/5 hover:bg-operarank-accent/5 hover:border-operarank-accent/20 transition-all cursor-default group">
+          <p className="text-[9px] uppercase font-black text-white/30 tracking-widest mb-1 group-hover:text-operarank-accent transition-colors">Finalizadas</p>
+          <h4 className="text-4xl font-black text-operarank-accent">{completed.length}</h4>
+          <div className="w-8 h-1 bg-operarank-accent/20 rounded-full mt-2" />
         </Card>
       </div>
 
+      <div className="flex items-center gap-4 bg-white/5 p-6 rounded-[2.5rem] border border-white/5 backdrop-blur-sm group cursor-pointer hover:bg-white/[0.08] transition-all" onClick={() => setActiveTab("loading")}>
+        <div className="w-12 h-12 rounded-2xl bg-operarank-accent/10 flex items-center justify-center text-operarank-accent">
+            <BarChart3 size={24} />
+        </div>
+        <div className="flex-1">
+            <div className="flex justify-between items-center mb-1.5">
+              <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Rendimento da Meta Diária</p>
+              <p className="text-sm text-operarank-accent font-black tracking-tighter">
+                {config.remessasSeparated} <span className="text-xs text-white/10 uppercase font-light">Separadas</span>
+              </p>
+            </div>
+            <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(100, (config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%` }}
+                className="h-full bg-gradient-to-r from-operarank-accent to-operarank-secondary rounded-full"
+              />
+            </div>
+        </div>
+        <div className="text-right px-4">
+            <p className="text-2xl font-black text-white/60">{Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%</p>
+        </div>
+      </div>
+
       <div>
-        <div className="flex items-center justify-between mb-6 px-2">
-          <div className="flex items-center gap-2">
-            <h4 className="text-[10px] uppercase font-black tracking-widest text-white/30">Log de Operação</h4>
-            <div className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 px-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/5 rounded-xl">
+                <SearchIcon size={14} className="text-white/30" />
+            </div>
+            <div>
+                <h4 className="text-[10px] uppercase font-black tracking-widest text-white/40">Log de Operação</h4>
+                <p className="text-[8px] text-white/20 uppercase font-black tracking-[0.2em]">{filteredTasks.length} Registros</p>
+            </div>
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-2" />
           </div>
-          <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={12} />
+          <div className="relative w-full sm:w-auto">
+            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={14} />
             <input 
               value={searchActive}
               onChange={(e) => setSearchActive(e.target.value)}
-              placeholder="Vans, Remessas, Nomes..." 
-              className="w-48 bg-white/5 border border-white/10 rounded-full pl-8 pr-4 py-2 text-[10px] outline-none focus:border-operarank-accent transition-all uppercase font-black focus:w-64"
+              placeholder="VANS, REMESSAS, NOMES..." 
+              className="w-full sm:w-64 bg-white/5 border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-[10px] outline-none focus:border-operarank-accent transition-all uppercase font-black focus:bg-white/[0.08]"
             />
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
           {filteredTasks.length === 0 ? (
-            <div className="col-span-full py-20 text-center">
-              <Package size={48} className="text-white/5 mx-auto mb-4" />
+            <div className="col-span-full py-32 text-center border-2 border-dashed border-white/5 rounded-[40px]">
+              <Package size={48} className="text-white/5 mx-auto mb-6" />
               <p className="text-[10px] uppercase font-black text-white/20 tracking-widest italic">Nenhuma atividade registrada</p>
             </div>
-          ) : filteredTasks.map((t: any) => (
+          ) : filteredTasks.map((t: any, index: number) => (
             <TaskListItem 
                 key={t.id} 
+                index={index}
                 task={t} 
                 isAdmin={user.role === "admin" || user.role === "manager" || user.role === "supervisor"}
-                onApprove={onApproveTask}
-                onReject={onRejectTask}
+                onDelete={onDeleteTask}
             />
           ))}
         </div>
@@ -1612,7 +1800,7 @@ function RankingView({ tasks, sectors, config }: any) {
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
           <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">
-            Monitorando em tempo real • Somente Aprovadas
+            Monitorando em tempo real • Operação Validada
           </p>
         </div>
       </div>
@@ -1648,7 +1836,7 @@ function RankingView({ tasks, sectors, config }: any) {
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-white/30 uppercase font-black">{u.count} tarefas aprovadas</p>
+                  <p className="text-[10px] text-white/30 uppercase font-black">{u.count} tarefas concluídas</p>
                 </div>
               </div>
               <div className="text-right">
@@ -1969,7 +2157,7 @@ function AdminManagement({ sectors, clients, config, onUpdateConfig }: any) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-bold">Notificações em Tempo Real</p>
-                <p className="text-[10px] text-white/40">Alertas de novas tarefas e aprovações via Firebase.</p>
+                <p className="text-[10px] text-white/40">Alertas de novas tarefas e conclusões via Firebase.</p>
               </div>
               <button 
                 onClick={() => onUpdateConfig({ notificationsEnabled: !config.notificationsEnabled })}
@@ -2099,7 +2287,7 @@ function StatsView({ tasks }: any) {
   );
 }
 
-function HistoryView({ tasks, sectors }: any) {
+function HistoryView({ tasks, sectors, onDelete }: any) {
   const [filters, setFilters] = useState({
     date: "",
     month: "",
@@ -2249,7 +2437,20 @@ function HistoryView({ tasks, sectors }: any) {
                     </p>
                   </div>
                 </div>
-                <StatusBadge status={t.status} />
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={t.status} />
+                  {onDelete && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(t.id);
+                      }}
+                      className="p-1.5 bg-red-500/10 text-red-400 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
@@ -2288,27 +2489,20 @@ function HistoryView({ tasks, sectors }: any) {
 const StatusBadge = ({ status }: any) => {
   const styles: any = {
     "in-progress": "text-operarank-accent bg-operarank-accent/10 border-operarank-accent/20",
-    "finished": "text-orange-400 bg-orange-400/10 border-orange-400/20",
     "approved": "text-green-400 bg-green-400/10 border-green-400/20",
-    "rejected": "text-red-400 bg-red-400/10 border-red-400/20",
   };
 
   const labels: any = {
     "in-progress": "Em Curso",
-    "finished": "Aguardando Auditoria",
-    "approved": "Aprovada",
-    "rejected": "Recusada",
+    "approved": "Finalizada",
   };
 
   const currentStatus = status || "approved";
 
   return (
     <div className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${styles[currentStatus] || styles["approved"]}`}>
-      {currentStatus === "approved" ? <CheckCircle2 size={12} /> : 
-       currentStatus === "finished" ? <Search size={12} className="animate-pulse" /> :
-       currentStatus === "rejected" ? <AlertTriangle size={12} /> :
-       <Clock size={12} />}
-      {labels[currentStatus] || "Aprovada"}
+      {currentStatus === "approved" ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+      {labels[currentStatus] || "Finalizada"}
     </div>
   );
 };

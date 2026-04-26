@@ -77,6 +77,14 @@ service cloud.firestore {
       allow update: if (isAdmin() && isValidUser(incoming())) 
                     || (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name']));
       allow delete: if isAdmin();
+
+      // Notifications
+      match /notifications/{noteId} {
+        allow get, list: if isOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     // Sectors
@@ -137,13 +145,5 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Notifications
-    match /users/{userId}/notifications/{noteId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow create: if isAdmin();
-      allow delete: if isOwner(userId) || isAdmin();
-    }
   }
 }

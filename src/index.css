@@ -11,6 +11,11 @@
   --color-operarank-secondary: #0EA5E9;
   --color-operarank-pink: #4F46E5;
   --color-operarank-glow: rgba(99, 102, 241, 0.2);
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
 }
 
 @layer base {
