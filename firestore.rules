@@ -136,7 +136,11 @@ service cloud.firestore {
     // Config
     match /config/general {
       allow read: if true;
-      allow write: if isAdmin();
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        incoming().diff(existing()).affectedKeys().hasOnly(['totalTrucks', 'remessasSeparated', 'trucksAtDock', 'trucksWaiting'])
+      );
+      allow create, delete: if isAdmin();
     }
 
     // Released Rankings

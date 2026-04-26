@@ -536,7 +536,19 @@ export default function SystemApp() {
         active: true,
         createdAt: serverTimestamp()
       });
-      alert("Admin criado com sucesso! O sistema irá carregar agora.");
+
+      // Initialize default config if missing
+      await setDoc(doc(db, "config", "general"), {
+        rankingVisible: true,
+        rankingShifts: ["Turno 1", "Turno 2", "Turno 3"],
+        totalTrucks: 20,
+        trucksAtDock: 0,
+        remessasSeparated: 0,
+        trucksWaiting: 0,
+        notificationsEnabled: true
+      }, { merge: true });
+
+      alert("Admin e Configuração inicializados com sucesso!");
     } catch (err: any) {
       console.error("Setup error:", err);
       alert("Erro no setup: " + err.message);
@@ -568,14 +580,6 @@ export default function SystemApp() {
     try {
       const sector = sectors.find(s => s.id === sectorId);
       
-      if (sectorName === "Expedição") {
-        await handleUpdateConfig({
-          trucksWaiting: Math.max(0, (config.trucksWaiting || 0) - 1),
-          trucksAtDock: (config.trucksAtDock || 0) + 1,
-          remessasSeparated: Math.max(0, (config.remessasSeparated || 0) - 1)
-        });
-      }
-
       const taskId = `${currentUser.uid}_${Date.now()}`;
       await setDoc(doc(db, "tasks", taskId), {
         id: taskId,
@@ -601,8 +605,7 @@ export default function SystemApp() {
       
       if (task && task.sectorName === "Expedição") {
         await handleUpdateConfig({
-          totalTrucks: Math.max(0, (config.totalTrucks || 0) - 1),
-          trucksAtDock: Math.max(0, (config.trucksAtDock || 0) - 1)
+          totalTrucks: Math.max(0, (config.totalTrucks || 0) - 1)
         });
       }
 
@@ -617,7 +620,6 @@ export default function SystemApp() {
         status: "approved",
         endTime: serverTimestamp()
       });
-      alert("Operação finalizada com sucesso!");
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `tasks/${taskId}`);
     }
@@ -634,9 +636,9 @@ export default function SystemApp() {
 
   const handleUpdateConfig = async (newConfig: Partial<AppConfig>) => {
     try {
-      await setDoc(doc(db, "config", "general"), { ...config, ...newConfig });
+      await setDoc(doc(db, "config", "general"), newConfig, { merge: true });
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, "config/general");
+      handleFirestoreError(err, OperationType.UPDATE, "config/general");
     }
   };
 
@@ -1840,8 +1842,9 @@ function ActiveTaskView({ task, config, onFinish }: any) {
           unit: e.target.unit.value,
           observation: e.target.observation.value
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
+        alert(`Erro ao finalizar tarefa: ${err.message || 'Membro do servidor negou a operação. Verifique se o registro já não foi finalizado.'}`);
       } finally {
         setIsFinishing(false);
       }
