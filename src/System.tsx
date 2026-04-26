@@ -104,6 +104,17 @@ import {
 import { auth, db } from "./lib/firebase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { 
+  ResponsiveContainer, 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  AreaChart, 
+  Area 
+} from "recharts";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth as getSecondaryAuth, createUserWithEmailAndPassword as createSecondaryUser } from "firebase/auth";
 import firebaseConfig from "../firebase-applet-config.json";
@@ -313,6 +324,24 @@ const LiveClock = () => {
 };
 
 // --- Main App Component ---
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const styles = {
+    "in-progress": "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    "approved": "bg-green-500/10 text-green-400 border-green-500/20",
+    "rejected": "bg-red-500/10 text-red-500 border-red-500/20"
+  };
+  const labels = {
+    "in-progress": "Em andamento",
+    "approved": "Concluído",
+    "rejected": "Recusado"
+  };
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${ (styles as any)[status] || "" }`}>
+      { (labels as any)[status] || status }
+    </span>
+  );
+};
 
 export default function SystemApp() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -1256,17 +1285,17 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
 
   if (selectedSector) return (
     <div className="animate-in fade-in slide-in-from-bottom-4">
-      <Button variant="ghost" onClick={() => setSelectedSector(null)} className="mb-6">
+      <Button variant="ghost" onClick={() => setSelectedSector(null)} className="mb-6 hover:bg-white/5">
         <ArrowLeft size={16} className="mr-2" /> Voltar aos Setores
       </Button>
-      <Card className="border-operarank-accent/20">
+      <Card className="border-operarank-accent/20 bg-white/[0.02] backdrop-blur-3xl rounded-[2.5rem] p-8">
         <div className="flex items-center gap-4 mb-8">
-          <div className="p-4 bg-operarank-accent/10 rounded-2xl text-operarank-accent">
+          <div className="p-4 bg-operarank-accent/10 rounded-2xl text-operarank-accent shadow-[0_0_20px_rgba(79,172,254,0.2)]">
             <Package size={32} />
           </div>
           <div>
-            <h3 className="text-2xl font-black uppercase tracking-tight">{selectedSector.name}</h3>
-            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black">Registro de Atividade</p>
+            <h3 className="text-2xl font-black uppercase tracking-tighter text-white">{selectedSector.name}</h3>
+            <p className="text-[10px] text-[#4facfe] uppercase tracking-[0.2em] font-black">Registro de Atividade</p>
           </div>
         </div>
 
@@ -1279,98 +1308,172 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
             <input 
               name="remessa"
               required 
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-5 text-2xl font-mono focus:border-operarank-accent focus:bg-white/10 outline-none transition-all placeholder:text-white/10" 
+              autoFocus
+              className="w-full bg-white/[0.03] border border-white/10 rounded-2xl px-6 py-5 text-2xl font-mono focus:border-[#4facfe] focus:bg-white/[0.06] outline-none transition-all placeholder:text-white/5 text-white" 
               placeholder="000000" 
             />
           </div>
-          <Button type="submit" className="w-full py-6 text-lg tracking-widest">INICIAR AGORA</Button>
+          <Button type="submit" className="w-full py-7 text-sm font-black tracking-[0.2em] bg-gradient-to-r from-[#4facfe] to-[#00f2fe] hover:shadow-[0_0_30px_rgba(79,172,254,0.4)]">INICIAR OPERAÇÃO</Button>
         </form>
       </Card>
     </div>
   );
 
+  const finishedToday = tasks.filter((t: any) => 
+    t.userId === user.uid && 
+    t.status === "approved" && 
+    t.endTime?.toDate && 
+    t.endTime.toDate().toDateString() === new Date().toDateString()
+  );
+
+  const progressPercent = Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100);
+
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 pb-24">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 pb-24 selection:bg-[#4facfe]/30">
       <LiveTicker tasks={tasks} />
 
-      <div className="bg-gradient-to-br from-operarank-accent/10 via-transparent to-white/5 p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden group">
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-operarank-accent/10 blur-[80px] group-hover:bg-operarank-accent/20 transition-all" />
-        <div className="flex justify-between items-start">
-            <div>
-              <h3 className="font-black text-3xl mb-1 uppercase tracking-tighter">Olá, {user.name.split(' ')[0]}!</h3>
-              <p className="text-xs text-white/40 uppercase tracking-widest font-black leading-none">Unidade Operacional • {user.shift}</p>
+      {/* TOP HEADER CARD */}
+      <div className="bg-[#050a1e]/40 border border-white/10 backdrop-blur-3xl p-8 rounded-[2.5rem] relative overflow-hidden group shadow-2xl">
+        <div className="absolute -top-20 -right-20 w-64 h-64 bg-[#4facfe]/10 rounded-full blur-[80px] group-hover:bg-[#4facfe]/20 transition-all duration-1000" />
+        
+        <div className="flex justify-between items-start mb-10">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                 <p className="text-[10px] text-white/30 uppercase tracking-[0.4em] font-black leading-none">Operational Status: OK</p>
+              </div>
+              <h3 className="font-black text-4xl text-white tracking-tighter uppercase leading-none">Central de Operações</h3>
+              <p className="text-xs text-[#4facfe] font-black uppercase tracking-[0.2em]">Fluxo de Expedição • {user.shift}</p>
             </div>
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/10 text-operarank-accent">
-                <User size={24} />
+            <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-[#4facfe] shadow-xl">
+                <User size={28} />
             </div>
         </div>
         
-        <div className="mt-8 flex items-center gap-3 bg-white/5 p-5 rounded-[2rem] border border-white/5 backdrop-blur-sm group cursor-pointer hover:bg-white/[0.08] transition-all" onClick={() => setActiveTab("loading")}>
-          <div className="w-10 h-10 rounded-xl bg-operarank-accent/10 flex items-center justify-center text-operarank-accent">
-             <BarChart3 size={20} />
-          </div>
-          <div className="flex-1">
-             <div className="flex justify-between items-center mb-1">
-                <p className="text-[9px] text-white/30 uppercase font-black tracking-widest">Meta de Carregamento</p>
-                <p className="text-[10px] text-operarank-accent font-black tracking-tighter">
-                  {config.remessasSeparated} <span className="text-white/20">/ {config.totalTrucks || 0}</span>
-                </p>
-             </div>
-             <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, (config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%` }}
-                  className="h-full bg-gradient-to-r from-operarank-accent to-operarank-secondary"
-                />
-             </div>
-          </div>
-          <div className="text-right">
-             <p className="text-[10px] font-black text-white/40">{Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%</p>
-          </div>
+        <div className="bg-white/[0.03] p-6 rounded-[2rem] border border-white/5 backdrop-blur-sm group cursor-pointer hover:bg-white/[0.07] transition-all duration-500" onClick={() => setActiveTab("loading")}>
+           <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="text-center">
+                 <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Meta Dia</p>
+                 <p className="text-xl font-black text-white">{config.totalTrucks || 0}</p>
+              </div>
+              <div className="text-center border-x border-white/5">
+                 <p className="text-[9px] text-[#4facfe] uppercase font-black tracking-widest mb-1">Finalizadas</p>
+                 <p className="text-xl font-black text-white">{config.remessasSeparated}</p>
+              </div>
+              <div className="text-center">
+                 <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Faltam</p>
+                 <p className="text-xl font-black text-white">{Math.max(0, (config.totalTrucks || 0) - config.remessasSeparated)}</p>
+              </div>
+           </div>
+
+           <div className="space-y-2">
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                 <span className="text-white/20">Progresso Geral</span>
+                 <span className="text-[#4facfe]">{progressPercent}%</span>
+              </div>
+              <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+                 <motion.div 
+                   initial={{ width: 0 }}
+                   animate={{ width: `${progressPercent}%` }}
+                   transition={{ duration: 1.5, ease: "circOut" }}
+                   className="h-full bg-gradient-to-r from-[#4facfe] to-[#00f2fe] rounded-full relative"
+                 >
+                    <div className="absolute inset-0 bg-white/20 opacity-30 animate-shimmer" />
+                 </motion.div>
+              </div>
+           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      {/* MAIN ACTION BUTTON */}
+      <div className="flex justify-center -mt-12 relative z-10">
         <motion.button 
-          whileHover={{ scale: 1.02, y: -2 }}
-          whileTap={{ scale: 0.98 }}
+          whileHover={{ scale: 1.05, y: -4 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => {
             const el = document.getElementById("sector-selection");
             el?.scrollIntoView({ behavior: 'smooth' });
           }}
-          className="w-full py-8 bg-operarank-accent rounded-[2.5rem] font-black uppercase tracking-[0.2em] shadow-[0_20px_50px_rgba(99,102,241,0.4)] flex items-center justify-center gap-3 active:shadow-inner transition-all hover:brightness-110"
+          className="px-10 py-6 bg-gradient-to-r from-[#4facfe] to-[#00f2fe] rounded-3xl font-black uppercase tracking-[0.3em] text-white shadow-[0_20px_50px_rgba(79,172,254,0.4)] flex items-center gap-4 hover:shadow-[0_25px_60px_rgba(79,172,254,0.6)] transition-all group"
         >
-          <Play size={20} fill="currentColor" /> Registrar Tarefa
+          <div className="bg-white/20 p-2 rounded-xl group-hover:bg-white/40 transition-colors">
+            <Play size={18} fill="currentColor" />
+          </div>
+          <span className="text-sm">Registrar Tarefa</span>
         </motion.button>
       </div>
 
-      <div id="sector-selection" className="grid grid-cols-2 gap-3">
-        {["Expedição", "Separação", "Recebimento"].map((name) => {
-          const s = sectors.find((sect: any) => sect.name === name);
+      {/* SECTOR CARDS */}
+      <div id="sector-selection" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          { name: "Expedição", icon: <TruckIcon />, info: `${finishedToday.filter(t => t.sectorName === "Expedição").length} concluídas hoje` },
+          { name: "Separação", icon: <Package />, info: `${tasks.filter(t => t.sectorName === "Separação" && t.status === "in-progress").length} em aberto` },
+          { name: "Recebimento", icon: <Box />, info: `${finishedToday.filter(t => t.sectorName === "Recebimento").length} entradas hoje` }
+        ].map((item, idx) => {
+          const s = sectors.find((sect: any) => sect.name === item.name);
           if (!s) return null;
           return (
             <motion.button 
-              whileHover={{ scale: 1.05, borderColor: "rgba(99,102,241,0.5)", backgroundColor: "rgba(255,255,255,0.05)" }}
-              whileTap={{ scale: 0.95 }}
-              key={s.id} 
+              key={s.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              whileHover={{ y: -5, borderColor: "rgba(79,172,254,0.4)", backgroundColor: "rgba(79,172,254,0.05)" }}
               onClick={() => setSelectedSector(s)}
-              className="p-5 glass rounded-[2rem] flex flex-col items-center gap-3 text-center group transition-all border border-white/5"
+              className="p-6 bg-white/[0.02] border border-white/5 backdrop-blur-xl rounded-[2rem] flex flex-col items-center text-center group transition-all shadow-xl"
             >
-              <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-operarank-accent/10 group-hover:text-operarank-accent transition-all text-operarank-secondary">
-                {s.name.toLowerCase().includes("empilhadeira") ? <Zap size={24} /> : <Box size={24} />}
+              <div className="w-16 h-16 rounded-[1.5rem] bg-white/5 flex items-center justify-center text-[#4facfe]/40 group-hover:text-[#4facfe] group-hover:bg-[#4facfe]/10 transition-all shadow-lg group-hover:shadow-[#4facfe]/20 mb-4">
+                {React.cloneElement(item.icon as React.ReactElement, { size: 32 })}
               </div>
-              <span className="text-[10px] font-black uppercase tracking-widest leading-tight opacity-70 group-hover:opacity-100 transition-opacity">{s.name}</span>
+              <h4 className="text-sm font-black uppercase tracking-widest text-white mb-2">{item.name}</h4>
+              <p className="text-[10px] text-white/20 font-black uppercase tracking-widest">{item.info}</p>
             </motion.button>
           );
         })}
       </div>
 
-      <div className="mt-10">
-        <div className="flex items-center gap-3 mb-8 px-2">
-            <h4 className="text-[10px] uppercase font-black tracking-widest text-white/30 whitespace-nowrap">Suas Atividades</h4>
+      {/* CARREGAMENTO DO DIA CARD (DUPLICATE STATUS) */}
+      <Card className="bg-gradient-to-br from-[#050a1e] to-white/[0.02] border border-white/5 p-8 rounded-[2.5rem] relative overflow-hidden">
+         <div className="flex items-center gap-4 mb-8">
+            <div className="w-12 h-12 rounded-2xl bg-[#4facfe]/10 flex items-center justify-center text-[#4facfe]">
+               <TruckIcon size={24} />
+            </div>
+            <div>
+               <h4 className="text-xl font-black tracking-tighter uppercase text-white">Carregamento do Dia</h4>
+               <p className="text-[9px] text-[#4facfe] font-black uppercase tracking-[0.3em]">Status Logístico em Tempo Real</p>
+            </div>
+         </div>
+
+         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+            <div className="space-y-1">
+               <p className="text-[9px] uppercase font-black text-white/20 tracking-widest">Meta</p>
+               <p className="text-2xl font-black text-white">{config.totalTrucks || 0}</p>
+            </div>
+            <div className="space-y-1">
+               <p className="text-[9px] uppercase font-black text-[#4facfe] tracking-widest">Finalizadas</p>
+               <p className="text-2xl font-black text-[#4facfe]">{config.remessasSeparated}</p>
+            </div>
+            <div className="space-y-1">
+               <p className="text-[9px] uppercase font-black text-white/20 tracking-widest">Faltam</p>
+               <p className="text-2xl font-black text-white">{Math.max(0, (config.totalTrucks || 0) - config.remessasSeparated)}</p>
+            </div>
+            <div className="space-y-1">
+               <p className="text-[9px] uppercase font-black text-white/20 tracking-widest">Turno</p>
+               <p className="text-xl font-black text-white">{user.shift}</p>
+            </div>
+         </div>
+      </Card>
+
+      {/* RECENT ACTIVITIES */}
+      <div className="mt-12">
+        <div className="flex items-center gap-4 mb-8 px-2">
+            <div className="p-2 bg-white/5 rounded-xl text-white/40">
+               <History size={16} />
+            </div>
+            <h4 className="text-[10px] uppercase font-black tracking-[0.4em] text-white/30 whitespace-nowrap">Registro Cronológico</h4>
             <div className="flex-1 h-[1px] bg-white/5" />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-5">
           {tasks.filter((t: any) => t.userId === user.uid).slice(0, 5).map((t: any, index: number) => (
             <TaskListItem 
                 key={t.id} 
@@ -1381,9 +1484,9 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
             />
           ))}
           {tasks.filter((t: any) => t.userId === user.uid).length === 0 && (
-              <div className="p-16 text-center border-2 border-dashed border-white/5 rounded-[2.5rem] bg-white/[0.01]">
-                <Package size={48} className="text-white/[0.02] mx-auto mb-6" />
-                <p className="text-[10px] uppercase font-black text-white/20 tracking-widest leading-relaxed">Prepare sua primeira remessa<br/>para iniciar o dia.</p>
+              <div className="p-20 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-white/[0.01]">
+                <Package size={48} className="text-white/5 mx-auto mb-6" />
+                <p className="text-[10px] uppercase font-black text-white/20 tracking-widest leading-relaxed italic">Aguardando registro da primeira operação...</p>
               </div>
           )}
         </div>
@@ -1711,6 +1814,26 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
 
   const inProgress = tasks.filter((t: any) => t.status === "in-progress");
   const completed = tasks.filter((t: any) => t.status === "approved");
+  
+  // Shift Statistics
+  const shiftStats = tasks.reduce((acc: any, t: any) => {
+    if (t.status === "approved" && t.userShift) {
+      acc[t.userShift] = (acc[t.userShift] || 0) + 1;
+    }
+    return acc;
+  }, {});
+
+  const barData = Object.entries(shiftStats).map(([name, value]) => ({ name, value }));
+
+  // Evolution Data (Last 7 hours or tasks)
+  const evolutionData = tasks
+    .filter((t: any) => t.status === "approved" && t.endTime)
+    .sort((a: any, b: any) => a.endTime.seconds - b.endTime.seconds)
+    .slice(-10)
+    .map((t: any, i: number) => ({
+      name: format(t.endTime.toDate(), "HH:mm"),
+      value: i + 1
+    }));
 
   const filteredTasks = tasks.filter((t: any) => {
     if (!searchActive) return true;
@@ -1720,79 +1843,226 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
       t.userName.toLowerCase().includes(search) ||
       t.sectorName.toLowerCase().includes(search)
     );
-  }).sort((a: any, b: any) => {
-    return 0;
-  }).slice(0, 20); 
+  }).slice(0, 20);
+
+  const progressPercent = Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100);
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
-      <LiveTicker tasks={tasks} />
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 pb-24 selection:bg-[#4facfe]/30">
+      {/* 1. TOPO / HEADER */}
+      <div className="sticky top-0 z-40 bg-[#050a1e]/80 backdrop-blur-3xl border-b border-white/10 -mx-4 px-6 py-4 md:-mx-10 md:px-10 mb-8">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#4facfe] to-[#00f2fe] flex items-center justify-center shadow-[0_0_20px_rgba(79,172,254,0.3)] shrink-0">
+                <TrendingUp size={24} className="text-white" />
+             </div>
+             <div>
+                <h1 className="text-xl font-black tracking-tighter uppercase text-white leading-none">OPERARANK</h1>
+                <p className="text-[8px] text-[#4facfe] font-black uppercase tracking-[0.3em] mt-1">Gestão de Operação</p>
+             </div>
+          </div>
+          
+          <div className="flex-1 max-w-xl mx-auto w-full">
+             <LiveTicker tasks={tasks} />
+          </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="flex flex-col items-center justify-center text-center p-6 bg-white/[0.02] border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all cursor-default group">
-          <p className="text-[9px] uppercase font-black text-white/30 tracking-widest mb-1 group-hover:text-white/50 transition-colors">Em Curso</p>
-          <h4 className="text-4xl font-black">{inProgress.length}</h4>
-          <div className="w-8 h-1 bg-operarank-accent/20 rounded-full mt-2" />
-        </Card>
-        <Card className="flex flex-col items-center justify-center text-center p-6 bg-white/[0.02] border-white/5 hover:bg-operarank-accent/5 hover:border-operarank-accent/20 transition-all cursor-default group">
-          <p className="text-[9px] uppercase font-black text-white/30 tracking-widest mb-1 group-hover:text-operarank-accent transition-colors">Finalizadas</p>
-          <h4 className="text-4xl font-black text-operarank-accent">{completed.length}</h4>
-          <div className="w-8 h-1 bg-operarank-accent/20 rounded-full mt-2" />
-        </Card>
-      </div>
-
-      <div className="flex items-center gap-4 bg-white/5 p-6 rounded-[2.5rem] border border-white/5 backdrop-blur-sm group cursor-pointer hover:bg-white/[0.08] transition-all" onClick={() => setActiveTab("loading")}>
-        <div className="w-12 h-12 rounded-2xl bg-operarank-accent/10 flex items-center justify-center text-operarank-accent">
-            <BarChart3 size={24} />
-        </div>
-        <div className="flex-1">
-            <div className="flex justify-between items-center mb-1.5">
-              <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Rendimento da Meta Diária</p>
-              <p className="text-sm text-operarank-accent font-black tracking-tighter">
-                {config.remessasSeparated} <span className="text-xs text-white/10 uppercase font-light">Separadas</span>
-              </p>
-            </div>
-            <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.min(100, (config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%` }}
-                className="h-full bg-gradient-to-r from-operarank-accent to-operarank-secondary rounded-full"
-              />
-            </div>
-        </div>
-        <div className="text-right px-4">
-            <p className="text-2xl font-black text-white/60">{Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100)}%</p>
+          <div className="flex items-center gap-6">
+             <div className="text-right hidden sm:block">
+                <h4 className="text-xs font-black text-white uppercase tracking-tight">{user.name}</h4>
+                <p className="text-[8px] text-[#4facfe] font-black uppercase tracking-widest">{user.shift}</p>
+             </div>
+             <div className="h-8 w-[1px] bg-white/10 hidden sm:block" />
+             <LiveClock />
+          </div>
         </div>
       </div>
 
-      <div>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 px-2">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/5 rounded-xl">
-                <SearchIcon size={14} className="text-white/30" />
+      {/* 2. RESUMO PRINCIPAL (cards grandes) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card Destaque: Carregamento do Dia */}
+        <Card className="relative overflow-hidden group border-[#4facfe]/20 bg-gradient-to-br from-[#4facfe]/10 via-transparent to-transparent p-6 h-full flex flex-col justify-center">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+             <TruckIcon size={48} />
+          </div>
+          <p className="text-[10px] uppercase font-black text-[#4facfe] tracking-[0.2em] mb-1">Carregamento do Dia</p>
+          <div className="flex items-baseline gap-2">
+             <h4 className="text-5xl font-black text-white tracking-tighter">{config.totalTrucks || 0}</h4>
+             <span className="text-xs font-black text-white/20 uppercase tracking-widest">Unidades</span>
+          </div>
+          <div className="mt-4 w-full h-1 bg-[#4facfe]/10 rounded-full overflow-hidden">
+             <motion.div 
+               initial={{ width: 0 }}
+               animate={{ width: "100%" }}
+               className="h-full bg-[#4facfe]"
+             />
+          </div>
+        </Card>
+
+        {/* Em Andamento */}
+        <Card className="p-6 bg-white/[0.02] border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all flex flex-col justify-center">
+          <div className="flex items-center gap-3 mb-2">
+             <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                <Clock size={16} />
+             </div>
+             <p className="text-[10px] uppercase font-black text-white/30 tracking-widest">Em Andamento</p>
+          </div>
+          <h4 className="text-4xl font-black text-white">{inProgress.length}</h4>
+          <p className="text-[9px] text-white/20 mt-1 uppercase font-black tracking-widest">Ativos no Terminal</p>
+        </Card>
+
+        {/* Finalizadas */}
+        <Card className="p-6 bg-white/[0.02] border-white/5 hover:bg-green-500/5 hover:border-green-500/20 transition-all flex flex-col justify-center">
+          <div className="flex items-center gap-3 mb-2">
+             <div className="w-8 h-8 rounded-xl bg-green-500/10 flex items-center justify-center text-green-400">
+                <CheckCircle2 size={16} />
+             </div>
+             <p className="text-[10px] uppercase font-black text-white/30 tracking-widest">Finalizadas</p>
+          </div>
+          <h4 className="text-4xl font-black text-green-400">{completed.length}</h4>
+          <p className="text-[9px] text-white/20 mt-1 uppercase font-black tracking-widest">Operações Validadas</p>
+        </Card>
+
+        {/* Por Turno (Meta) */}
+        <Card className="p-6 bg-white/[0.02] border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all flex flex-col justify-center">
+          <div className="flex items-center gap-3 mb-2">
+             <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-white/40">
+                <TrendingUp size={16} />
+             </div>
+             <p className="text-[10px] uppercase font-black text-white/30 tracking-widest">Produtividade Meta</p>
+          </div>
+          <h4 className="text-4xl font-black text-white/80">{config.remessasSeparated}</h4>
+          <p className="text-[9px] text-white/20 mt-1 uppercase font-black tracking-widest">Turno {user.shift.split(' ')[1]}</p>
+        </Card>
+      </div>
+
+      {/* 3. PROGRESSO (Full Width) */}
+      <Card className="p-8 border-white/5 bg-white/[0.01] backdrop-blur-3xl rounded-[2rem] relative overflow-hidden" onClick={() => setActiveTab("loading")}>
+         <div className="absolute top-0 right-0 p-8 h-full flex flex-col justify-center pointer-events-none opacity-5">
+            <BarChart3 size={120} />
+         </div>
+         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8 uppercase font-black">
+            <div>
+               <p className="text-[10px] text-[#4facfe] tracking-[0.4em] mb-2">Status do Escoamento</p>
+               <h3 className="text-3xl text-white tracking-tighter">PROGRESSO DA EXPEDIÇÃO</h3>
+            </div>
+            <div className="flex gap-8 border-t sm:border-t-0 sm:border-l border-white/10 pt-4 sm:pt-0 sm:pl-8">
+               <div className="text-center sm:text-left">
+                  <p className="text-[9px] text-white/20 tracking-widest mb-1">Finalizadas</p>
+                  <p className="text-2xl text-white">{config.remessasSeparated}</p>
+               </div>
+               <div className="text-center sm:text-left">
+                  <p className="text-[9px] text-white/20 tracking-widest mb-1">Faltam</p>
+                  <p className="text-2xl text-white">{Math.max(0, (config.totalTrucks || 0) - config.remessasSeparated)}</p>
+               </div>
+               <div className="text-center sm:text-left">
+                   <p className="text-[9px] text-[#4facfe] tracking-widest mb-1">Eficiência</p>
+                   <p className="text-2xl text-[#4facfe]">{progressPercent}%</p>
+               </div>
+            </div>
+         </div>
+         <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden p-1 border border-white/10 shadow-inner">
+            <motion.div 
+               initial={{ width: 0 }}
+               animate={{ width: `${progressPercent}%` }}
+               transition={{ duration: 1.5, ease: "circOut" }}
+               className="h-full bg-gradient-to-r from-[#4facfe] to-[#00f2fe] rounded-full relative"
+            >
+               <div className="absolute inset-0 bg-white/20 opacity-30 animate-shimmer" />
+            </motion.div>
+         </div>
+      </Card>
+
+      {/* 4. GRÁFICOS (Lado a Lado) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         {/* Gráfico de Produção por Turno */}
+         <Card className="p-8 border-white/5 bg-white/[0.02] rounded-[2rem]">
+            <div className="flex items-center justify-between mb-8">
+               <div>
+                  <h4 className="text-sm font-black uppercase tracking-widest text-white">Produção por Turno</h4>
+                  <p className="text-[9px] text-white/20 uppercase font-black tracking-widest">Volume de Entregas</p>
+               </div>
+               <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/20">
+                  <BarChart3 size={18} />
+               </div>
+            </div>
+            <div className="h-[250px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData}>
+                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                     <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={10} axisLine={false} tickLine={false} />
+                     <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} axisLine={false} tickLine={false} />
+                     <Tooltip 
+                        contentStyle={{ backgroundColor: "#050a1e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px" }} 
+                        itemStyle={{ color: "#4facfe", fontWeight: "bold" }}
+                     />
+                     <Bar dataKey="value" fill="#4facfe" radius={[4, 4, 0, 0]} barSize={40} />
+                  </BarChart>
+               </ResponsiveContainer>
+            </div>
+         </Card>
+
+         {/* Gráfico de Evolução do Dia */}
+         <Card className="p-8 border-white/5 bg-white/[0.02] rounded-[2rem]">
+            <div className="flex items-center justify-between mb-8">
+               <div>
+                  <h4 className="text-sm font-black uppercase tracking-widest text-white">Evolução do Fluxo</h4>
+                  <p className="text-[9px] text-white/20 uppercase font-black tracking-widest">Últimos Registros (pico)</p>
+               </div>
+               <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/20">
+                  <TrendingUp size={18} />
+               </div>
+            </div>
+            <div className="h-[250px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={evolutionData.length > 0 ? evolutionData : [{ name: '00:00', value: 0 }]}>
+                     <defs>
+                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                           <stop offset="5%" stopColor="#4facfe" stopOpacity={0.3}/>
+                           <stop offset="95%" stopColor="#4facfe" stopOpacity={0}/>
+                        </linearGradient>
+                     </defs>
+                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                     <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={10} axisLine={false} tickLine={false} />
+                     <YAxis hide />
+                     <Tooltip 
+                        contentStyle={{ backgroundColor: "#050a1e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px" }}
+                        itemStyle={{ color: "#00f2fe", fontWeight: "bold" }}
+                     />
+                     <Area type="monotone" dataKey="value" stroke="#4facfe" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+                  </AreaChart>
+               </ResponsiveContainer>
+            </div>
+         </Card>
+      </div>
+
+      {/* 5. LOG DE OPERAÇÃO (Parte inferior) */}
+      <div className="bg-[#050a1e]/40 border border-white/10 p-8 rounded-[2.5rem] backdrop-blur-3xl shadow-2xl">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mb-10">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-white/5 rounded-2xl border border-white/10 text-white/30">
+                <SearchIcon size={18} />
             </div>
             <div>
-                <h4 className="text-[10px] uppercase font-black tracking-widest text-white/40">Log de Operação</h4>
-                <p className="text-[8px] text-white/20 uppercase font-black tracking-[0.2em]">{filteredTasks.length} Registros</p>
+                <h4 className="text-xl font-black uppercase tracking-tighter text-white">Log de Operação</h4>
+                <p className="text-[9px] text-[#4facfe] uppercase font-black tracking-[0.4em]">{filteredTasks.length} Registros Disponíveis</p>
             </div>
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-2" />
           </div>
           <div className="relative w-full sm:w-auto">
-            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={14} />
+            <SearchIcon className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20" size={16} />
             <input 
               value={searchActive}
               onChange={(e) => setSearchActive(e.target.value)}
-              placeholder="VANS, REMESSAS, NOMES..." 
-              className="w-full sm:w-64 bg-white/5 border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-[10px] outline-none focus:border-operarank-accent transition-all uppercase font-black focus:bg-white/[0.08]"
+              placeholder="PESQUISAR REMESSA, COLABORADOR..." 
+              className="w-full sm:w-80 bg-white/[0.03] border border-white/10 rounded-2xl pl-12 pr-6 py-4 text-xs outline-none focus:border-[#4facfe] transition-all uppercase font-black focus:bg-white/[0.08] text-white"
             />
           </div>
         </div>
         
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
           {filteredTasks.length === 0 ? (
-            <div className="col-span-full py-32 text-center border-2 border-dashed border-white/5 rounded-[40px]">
+            <div className="col-span-full py-24 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-white/[0.01]">
               <Package size={48} className="text-white/5 mx-auto mb-6" />
-              <p className="text-[10px] uppercase font-black text-white/20 tracking-widest italic">Nenhuma atividade registrada</p>
+              <p className="text-[10px] uppercase font-black text-white/20 tracking-widest italic">Aguardando novos feeds do terminal...</p>
             </div>
           ) : filteredTasks.map((t: any, index: number) => (
             <TaskListItem 
@@ -2642,24 +2912,3 @@ function HistoryView({ tasks, sectors, onDelete }: any) {
     </div>
   );
 }
-
-const StatusBadge = ({ status }: any) => {
-  const styles: any = {
-    "in-progress": "text-operarank-accent bg-operarank-accent/10 border-operarank-accent/20",
-    "approved": "text-green-400 bg-green-400/10 border-green-400/20",
-  };
-
-  const labels: any = {
-    "in-progress": "Em Curso",
-    "approved": "Finalizada",
-  };
-
-  const currentStatus = status || "approved";
-
-  return (
-    <div className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${styles[currentStatus] || styles["approved"]}`}>
-      {currentStatus === "approved" ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-      {labels[currentStatus] || "Finalizada"}
-    </div>
-  );
-};
