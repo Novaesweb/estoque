@@ -114,9 +114,9 @@ service cloud.firestore {
         // Action: Finalize (by Owner)
         (isOwner(existing().userId) 
          && existing().status == 'in-progress'
-         && incoming().status == 'finished'
+         && incoming().status == 'approved'
          && incoming().endTime == request.time
-         && (incoming().quantity > 0)
+         && (incoming().quantity >= 0)
          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endTime', 'quantity', 'unit', 'clientId', 'route', 'observation']))
         
         ||

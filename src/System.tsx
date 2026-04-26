@@ -584,20 +584,12 @@ export default function SystemApp() {
 
   const handleFinishTask = async (taskId: string, data: any) => {
     try {
-      const task = tasks.find(t => t.id === taskId);
-      if (task && task.sectorName === "Expedição") {
-        await handleUpdateConfig({ remessasSeparated: Math.max(0, config.remessasSeparated - 1) });
-      }
-
       await updateDoc(doc(db, "tasks", taskId), {
         ...data,
         status: "approved",
         endTime: serverTimestamp()
       });
       alert("Operação finalizada com sucesso!");
-      
-      // Notify managers/admins (future: fetch admins, for now simplified notification to 'admin')
-      // Note: In a real app we would loop through all users with role supervisor/manager/admin
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `tasks/${taskId}`);
     }
@@ -1668,6 +1660,7 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
 function ActiveTaskView({ task, config, onFinish }: any) {
   const [timer, setTimer] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isFinishing, setIsFinishing] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1683,6 +1676,24 @@ function ActiveTaskView({ task, config, onFinish }: any) {
     const mins = Math.floor(s / 60);
     const secs = s % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+    if (window.confirm("Deseja realmente finalizar esta atividade? Verifique se os dados estão corretos.")) {
+      try {
+        setIsFinishing(true);
+        await onFinish(task.id, {
+          quantity: Number(e.target.quantity.value),
+          unit: e.target.unit.value,
+          observation: e.target.observation.value
+        });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsFinishing(false);
+      }
+    }
   };
 
   return (
@@ -1715,16 +1726,7 @@ function ActiveTaskView({ task, config, onFinish }: any) {
           </div>
         </div>
 
-        <form onSubmit={(e: any) => {
-          e.preventDefault();
-          if (confirm("Deseja realmente finalizar esta atividade? Verifique se os dados estão corretos.")) {
-            onFinish(task.id, {
-              quantity: Number(e.target.quantity.value),
-              unit: e.target.unit.value,
-              observation: e.target.observation.value
-            });
-          }
-        }} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] uppercase font-black text-white/30 tracking-widest ml-1">Quantidade</label>
@@ -1749,7 +1751,7 @@ function ActiveTaskView({ task, config, onFinish }: any) {
             <label className="text-[10px] uppercase font-black text-white/30 tracking-widest ml-1">Observação (Opcional)</label>
             <input name="observation" className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 focus:border-operarank-accent outline-none" placeholder="..." />
           </div>
-          <Button type="submit" className="w-full py-6 mt-4">Finalizar Tarefa</Button>
+          <Button type="submit" loading={isFinishing} className="w-full py-6 mt-4">Finalizar Tarefa</Button>
         </form>
       </Card>
     </div>
