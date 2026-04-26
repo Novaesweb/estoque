@@ -133,6 +133,9 @@ interface AppConfig {
   remessasSeparated: number;
   trucksWaiting: number;
   notificationsEnabled: boolean;
+  webhookUrl?: string;
+  allowedEmails?: string[];
+  restrictAccess?: boolean;
 }
 
 interface UserProfile {
@@ -172,6 +175,24 @@ interface Task {
   userName: string;
   userShift: string;
   rejectionReason?: string;
+}
+
+async function triggerWebhook(url: string, payload: any) {
+  if (!url || !url.startsWith("http")) return;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        source: "OperaRank",
+        timestamp: new Date().toISOString()
+      })
+    });
+    if (!response.ok) console.warn("Webhook failed:", response.statusText);
+  } catch (err) {
+    console.error("Webhook error:", err);
+  }
 }
 
 async function sendNotification(userId: string, title: string, body: string, type: string, relatedId?: string) {
@@ -352,6 +373,7 @@ export default function SystemApp() {
   const [tabLoading, setTabLoading] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const VAPID_KEY = "BP0InLsQzdPFLAB3No3KR0-lAy8fJGuX5XrxOrvx_SlzZmTA0poUZuHJf3Cii-MIRgBUfg9TCU5Pmrlq0eKCedk";
 
@@ -370,7 +392,9 @@ export default function SystemApp() {
     trucksAtDock: 3,
     remessasSeparated: 9,
     trucksWaiting: 5,
-    notificationsEnabled: false
+    notificationsEnabled: false,
+    allowedEmails: [],
+    restrictAccess: false
   });
 
   const [authError, setAuthError] = useState<string | null>(null);
@@ -388,10 +412,38 @@ export default function SystemApp() {
       console.log("Auth state changed:", user?.uid);
       if (user) {
         setIsAuthenticating(true);
+
+        // Security Check: Access Restriction
+        if (config.restrictAccess) {
+          const isAllowed = config.allowedEmails?.includes(user.email || "");
+          // Special case: First admin setup or current user is explicitly allowed
+          // We let the admin in if strictly allowed or if profiles haven't loaded yet
+          if (!isAllowed) {
+            // Check if user is the master admin (hardcoded for setup or if they have the role)
+            // For now, we'll wait for profile snap to see if they are admin
+          }
+        }
+
         const docRef = doc(db, "users", user.uid);
         profileUnsub = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const profile = docSnap.data() as UserProfile;
+            
+            // Re-apply security check with profile role info
+            if (config.restrictAccess && profile.role !== "admin") {
+              const isAllowed = config.allowedEmails?.includes(user.email || "");
+              if (!isAllowed) {
+                setAccessDenied(true);
+                setCurrentUser(null);
+                setView("login");
+                setAuthError("Acesso restrito. Seu e-mail não está na lista de autorizados.");
+                setLoading(false);
+                setIsAuthenticating(false);
+                return;
+              }
+            }
+
+            setAccessDenied(false);
             setCurrentUser(profile);
             setView("dashboard");
             setAuthError(null);
@@ -634,8 +686,9 @@ export default function SystemApp() {
       const task = tasks.find(t => t.id === taskId);
       
       if (task && task.sectorName === "Expedição") {
+        const newTotal = Math.max(0, (config.totalTrucks || 0) - 1);
         await handleUpdateConfig({
-          totalTrucks: Math.max(0, (config.totalTrucks || 0) - 1)
+          totalTrucks: newTotal
         });
       }
 
@@ -650,6 +703,49 @@ export default function SystemApp() {
         status: "approved",
         endTime: serverTimestamp()
       });
+
+      // --- Webhook Trigger ---
+      if (config.webhookUrl) {
+        const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
+        const completedToday = tasks.filter((t: any) => 
+          (t.status === "approved" || t.id === taskId) && 
+          t.endTime?.toDate && 
+          t.endTime.toDate() > lastReset
+        );
+
+        const currentCount = completedToday.length + (task?.status !== "approved" ? 1 : 0);
+        const goal = config.totalTrucks || 0;
+        const progress = goal > 0 ? (currentCount / goal) * 100 : 0;
+
+        triggerWebhook(config.webhookUrl, {
+          event: "task_finished",
+          task: {
+            id: taskId,
+            remessa: task?.remessa,
+            user: task?.userName,
+            sector: task?.sectorName,
+            quantity: data.quantity || 0,
+            unit: task?.unit
+          },
+          system: {
+            progress: Math.round(progress),
+            completed: currentCount,
+            goal: goal
+          }
+        });
+
+        // Goal reached notification
+        if (goal > 0 && currentCount === goal) {
+           triggerWebhook(config.webhookUrl, {
+             event: "goal_reached",
+             message: "🎯 META DIÁRIA ATINGIDA!",
+             system: {
+               completed: currentCount,
+               goal: goal
+             }
+           });
+        }
+      }
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `tasks/${taskId}`);
     }
@@ -1281,7 +1377,7 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
 
   if (activeTab === "ranking") return <RankingView tasks={tasks} sectors={sectors} config={config} />;
   if (activeTab === "stats") return <StatsView tasks={tasks} config={config} />;
-  if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} />;
+  if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} tasks={tasks} />;
 
   if (activeTask) return <ActiveTaskView task={activeTask} config={config} onFinish={onFinishTask} />;
 
@@ -1323,6 +1419,12 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
 
   const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
 
+  const completedToday = tasks.filter((t: any) => 
+    t.status === "approved" && 
+    t.endTime?.toDate && 
+    t.endTime.toDate() > lastReset
+  );
+
   const finishedToday = tasks.filter((t: any) => 
     t.userId === user.uid && 
     t.status === "approved" && 
@@ -1330,7 +1432,7 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
     t.endTime.toDate() > lastReset
   );
 
-  const progressPercent = Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100);
+  const progressPercent = Math.round((completedToday.length / (config.totalTrucks || 1)) * 100);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 pb-24 selection:bg-[#4facfe]/30">
@@ -1357,16 +1459,16 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
         <div className="bg-white/[0.03] p-6 rounded-[2rem] border border-white/5 backdrop-blur-sm group cursor-pointer hover:bg-white/[0.07] transition-all duration-500" onClick={() => setActiveTab("loading")}>
            <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="text-center">
-                 <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Meta Dia</p>
-                 <p className="text-xl font-black text-white">{config.totalTrucks || 0}</p>
+                 <p className="text-[9px] text-[#4facfe] uppercase font-black tracking-widest mb-1">Separadas</p>
+                 <p className="text-xl font-black text-[#4facfe]">{config.remessasSeparated}</p>
               </div>
               <div className="text-center border-x border-white/5">
-                 <p className="text-[9px] text-[#4facfe] uppercase font-black tracking-widest mb-1">Finalizadas</p>
-                 <p className="text-xl font-black text-white">{config.remessasSeparated}</p>
+                 <p className="text-[9px] text-green-400 uppercase font-black tracking-widest mb-1">Minhas Final.</p>
+                 <p className="text-xl font-black text-white">{finishedToday.length}</p>
               </div>
               <div className="text-center">
-                 <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Faltam</p>
-                 <p className="text-xl font-black text-white">{Math.max(0, (config.totalTrucks || 0) - config.remessasSeparated)}</p>
+                 <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Meta Dia</p>
+                 <p className="text-xl font-black text-white/50">{config.totalTrucks || 0}</p>
               </div>
            </div>
 
@@ -1500,23 +1602,32 @@ function EmployeeDashboard({ user, activeTask, sectors, onStartTask, onFinishTas
 }
 
 // --- Loading/Goals View ---
-function LoadingView({ config, onUpdateConfig, user }: any) {
+function LoadingView({ config, onUpdateConfig, user, tasks }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     totalTrucks: config.totalTrucks || 0,
     trucksAtDock: config.trucksAtDock || 0,
     remessasSeparated: config.remessasSeparated || 0,
-    trucksWaiting: config.trucksWaiting || 0
+    trucksWaiting: config.trucksWaiting || 0,
+    webhookUrl: config.webhookUrl || ""
   });
+
+  const lastReset = config.lastResetAt?.toDate ? config.lastResetAt.toDate() : new Date(new Date().setHours(0,0,0,0));
+  const completedToday = (tasks || []).filter((t: any) => 
+    t.status === "approved" && 
+    t.endTime?.toDate && 
+    t.endTime.toDate() > lastReset
+  );
 
   const stats = {
     total: config.totalTrucks || 0,
     dock: config.trucksAtDock || 0,
     separated: config.remessasSeparated || 0,
-    street: config.trucksWaiting || 0
+    street: config.trucksWaiting || 0,
+    completedTasksCount: completedToday.length
   };
 
-  const progressTotal = stats.total > 0 ? (stats.separated / stats.total) * 100 : 0;
+  const progressTotal = stats.total > 0 ? (stats.completedTasksCount / stats.total) * 100 : 0;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1594,6 +1705,18 @@ function LoadingView({ config, onUpdateConfig, user }: any) {
                       className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-operarank-accent font-bold"
                     />
                   </div>
+                  <div className="space-y-1 col-span-2 lg:col-span-4">
+                    <label className="text-[9px] uppercase font-black text-[#4facfe] tracking-widest ml-1 flex items-center gap-2">
+                       <Bell size={10} /> Webhook de Notificações (WhatsApp/Make)
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="https://hook.make.com/..."
+                      value={editForm.webhookUrl}
+                      onChange={e => setEditForm({...editForm, webhookUrl: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-operarank-accent font-mono text-xs"
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <Button type="submit" className="flex-1 py-4 shadow-xl">Confirmar Planejamento</Button>
@@ -1661,7 +1784,7 @@ function LoadingView({ config, onUpdateConfig, user }: any) {
           </div>
           <div className="text-right w-full sm:w-auto px-6 py-4 rounded-3xl bg-white/[0.03] border border-white/5 backdrop-blur-xl">
              <p className="text-[9px] uppercase font-black text-white/20 tracking-widest mb-1">Status da Meta</p>
-             <p className="text-xl font-mono font-black text-operarank-accent">{stats.separated} <span className="text-xs text-white/20">/ {stats.total}</span></p>
+             <p className="text-xl font-mono font-black text-operarank-accent">{stats.completedTasksCount} <span className="text-xs text-white/20">/ {stats.total}</span></p>
           </div>
         </div>
 
@@ -1839,7 +1962,7 @@ function TaskListItem({ task, isAdmin, onDelete, index = 0 }: any) {
 function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig, onDeleteTask, activeTab, setActiveTab, isSidebarCollapsed }: any) {
   const [searchActive, setSearchActive] = useState("");
 
-  if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} />;
+  if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} tasks={tasks} />;
   if (activeTab === "manage") return <AdminManagement sectors={sectors} clients={clients} config={config} onUpdateConfig={onUpdateConfig} />;
   if (activeTab === "ranking" || activeTab === "stats") return <RankingView tasks={tasks} sectors={sectors} config={config} />;
   if (activeTab === "history") return <HistoryView tasks={tasks} sectors={sectors} onDelete={onDeleteTask} />;
@@ -1879,7 +2002,7 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
     );
   }).slice(0, 20);
 
-  const progressPercent = Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100);
+  const progressPercent = Math.round((completed.length / (config.totalTrucks || 1)) * 100);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 pb-24 selection:bg-[#4facfe]/30">
@@ -1981,12 +2104,16 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
             </div>
             <div className="flex gap-8 border-t sm:border-t-0 sm:border-l border-white/10 pt-4 sm:pt-0 sm:pl-8">
                <div className="text-center sm:text-left">
-                  <p className="text-[9px] text-white/20 tracking-widest mb-1">Finalizadas</p>
-                  <p className="text-2xl text-white">{config.remessasSeparated}</p>
+                  <p className="text-[9px] text-[#4facfe] tracking-widest mb-1 font-bold">Separadas</p>
+                  <p className="text-2xl text-[#4facfe]">{config.remessasSeparated}</p>
                </div>
                <div className="text-center sm:text-left">
-                  <p className="text-[9px] text-white/20 tracking-widest mb-1">Faltam</p>
-                  <p className="text-2xl text-white">{Math.max(0, (config.totalTrucks || 0) - config.remessasSeparated)}</p>
+                  <p className="text-[9px] text-green-400 tracking-widest mb-1 font-bold">Finalizadas</p>
+                  <p className="text-2xl text-white">{completed.length}</p>
+               </div>
+               <div className="text-center sm:text-left">
+                  <p className="text-[9px] text-white/20 tracking-widest mb-1">Meta Dia</p>
+                  <p className="text-2xl text-white/60">{config.totalTrucks || 0}</p>
                </div>
                <div className="text-center sm:text-left">
                    <p className="text-[9px] text-[#4facfe] tracking-widest mb-1">Eficiência</p>
@@ -2417,6 +2544,7 @@ function AdminManagement({ sectors, clients, config, onUpdateConfig }: any) {
           { id: "users", label: "Usuários", icon: <Users size={14} /> },
           { id: "structure", label: "Estrutura", icon: <Settings size={14} /> },
           { id: "ranking", label: "Ranking", icon: <BarChart3 size={14} /> },
+          { id: "security", label: "Segurança", icon: <ShieldCheck size={14} /> },
           { id: "settings", label: "Sistema", icon: <Bell size={14} /> }
         ] as any[]).map(tab => (
           <button 
@@ -2610,6 +2738,93 @@ function AdminManagement({ sectors, clients, config, onUpdateConfig }: any) {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {activeSubTab === "security" && (
+        <Card className="p-8">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-12 h-12 rounded-2xl bg-operarank-accent/10 flex items-center justify-center text-operarank-accent">
+               <ShieldCheck size={24} />
+            </div>
+            <div>
+               <h3 className="text-xl font-black uppercase tracking-tighter">Controle de Acesso</h3>
+               <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Gerencie quem pode visualizar o sistema</p>
+            </div>
+          </div>
+
+          <div className="space-y-8">
+            <div className="flex items-center justify-between p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
+              <div>
+                <p className="font-bold text-white">Restringir por E-mail</p>
+                <p className="text-[10px] text-white/40 uppercase tracking-widest leading-relaxed">
+                  Quando ativo, apenas e-mails na lista abaixo poderão logar.<br/>
+                  <span className="text-operarank-accent">Administradores sempre têm acesso.</span>
+                </p>
+              </div>
+              <button 
+                onClick={() => onUpdateConfig({ restrictAccess: !config.restrictAccess })}
+                className={`w-14 h-8 rounded-full p-1 transition-all ${config.restrictAccess ? "bg-operarank-accent" : "bg-white/10"}`}
+              >
+                <div className={`w-6 h-6 rounded-full bg-white transition-all ${config.restrictAccess ? "translate-x-6" : "translate-x-0"}`} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+               <h4 className="text-[10px] uppercase font-black text-white/30 tracking-[0.2em] ml-1">E-mails Autorizados</h4>
+               
+               <form 
+                 onSubmit={(e: any) => {
+                   e.preventDefault();
+                   const email = e.target.email.value.toLowerCase().trim();
+                   if (!email) return;
+                   if (config.allowedEmails?.includes(email)) {
+                     alert("E-mail já está na lista.");
+                     return;
+                   }
+                   const newList = [...(config.allowedEmails || []), email];
+                   onUpdateConfig({ allowedEmails: newList });
+                   e.target.reset();
+                 }}
+                 className="flex gap-2"
+               >
+                 <input 
+                   name="email"
+                   type="email"
+                   placeholder="colaborador@email.com"
+                   className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 outline-none focus:border-operarank-accent transition-all text-sm"
+                 />
+                 <Button type="submit" className="shrink-0">Adicionar</Button>
+               </form>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
+                 {(config.allowedEmails || []).map(email => (
+                   <div key={email} className="flex justify-between items-center p-4 bg-white/5 border border-white/10 rounded-2xl group hover:border-white/20 transition-all">
+                     <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/20">
+                           <User size={14} />
+                        </div>
+                        <span className="text-sm font-bold opacity-80">{email}</span>
+                     </div>
+                     <button 
+                        onClick={() => {
+                          const newList = config.allowedEmails?.filter(e => e !== email);
+                          onUpdateConfig({ allowedEmails: newList });
+                        }}
+                        className="text-white/10 group-hover:text-red-500 transition-colors p-2"
+                     >
+                        <Trash2 size={16} />
+                     </button>
+                   </div>
+                 ))}
+                 {(config.allowedEmails || []).length === 0 && (
+                   <div className="col-span-full py-12 text-center border-2 border-dashed border-white/5 rounded-3xl bg-white/[0.01]">
+                     <p className="text-[10px] uppercase font-black text-white/20 tracking-widest italic">Nenhum e-mail restrito configurado</p>
+                   </div>
+                 )}
+               </div>
             </div>
           </div>
         </Card>
