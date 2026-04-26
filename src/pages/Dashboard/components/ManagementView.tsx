@@ -10,10 +10,12 @@ import {
   Users as UsersIcon
 } from "lucide-react";
 import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { db, firebaseConfig, getSecondaryAuth, createSecondaryUser } from "../../lib/firebase";
+import { db, firebaseConfig, getSecondaryAuth, createSecondaryUser } from "../../../lib/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
-import { Card } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
+import { Card } from "../../../components/ui/Card";
+import { Button } from "../../../components/ui/Button";
+import { handleFirestoreError } from "../../../utils/firestore-helpers";
+import { OperationType } from "../../../types";
 
 interface ManagementViewProps {
   user: any;
