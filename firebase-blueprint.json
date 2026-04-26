@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a system user (employee, supervisor, or manager).",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "role": { "type": "string", "enum": ["employee", "supervisor", "manager", "admin"] },
+        "shift": { "type": "string", "enum": ["Turno 1", "Turno 2", "Turno 3"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "employeeId", "role", "active"]
+    },
+    "Sector": {
+      "title": "Sector",
+      "description": "Operational sectors in the warehouse.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "unit": { "type": "string", "enum": ["caixas", "volumes", "pallets", "cargas"] }
+      },
+      "required": ["name", "unit"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Clients or delivery routes.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A productivity task recorded by an employee.",
+      "type": "object",
+      "properties": {
+        "remessa": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "clientId": { "type": "string" },
+        "observation": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["in-progress", "finished", "approved", "rejected"] },
+        "sectorId": { "type": "string" },
+        "sectorName": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userShift": { "type": "string" },
+        "rejectionReason": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["remessa", "startTime", "status", "userId", "sectorId"]
+    },
+    "AppConfig": {
+      "title": "App Config",
+      "description": "Global settings for the application.",
+      "type": "object",
+      "properties": {
+        "rankingVisible": { "type": "boolean" },
+        "rankingShifts": { "type": "array", "items": { "type": "string" } },
+        "notificationsEnabled": { "type": "boolean" }
+      }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Internal alerts for users.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string", "enum": ["approval", "rejection", "new_task"] },
+        "relatedId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "body", "type", "createdAt", "read"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Store user profiles."
+    },
+    "/users/{userId}/notifications/{noteId}": {
+      "schema": "Notification",
+      "description": "User notifications."
+    },
+    "/sectors/{sectorId}": {
+      "schema": "Sector",
+      "description": "Store operational sectors."
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Store clients list."
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Store all task records."
+    },
+    "/config/general": {
+      "schema": "AppConfig",
+      "description": "Global application configuration."
+    }
+  }
+}

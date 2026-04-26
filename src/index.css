@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-display: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-operarank-dark: #0A0F1D;
+  --color-operarank-card: rgba(255, 255, 255, 0.02);
+  --color-operarank-accent: #6366F1;
+  --color-operarank-secondary: #0EA5E9;
+  --color-operarank-pink: #4F46E5;
+  --color-operarank-glow: rgba(99, 102, 241, 0.2);
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-operarank-dark text-white font-sans antialiased selection:bg-operarank-accent/30;
+  }
+  option {
+    @apply bg-[#0A0F1D] text-white;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-operarank-card backdrop-blur-[12px] border border-white/10;
+  }
+  .glass-hover {
+    @apply hover:bg-white/[0.08] transition-colors duration-300;
+  }
+  .text-glow {
+    text-shadow: 0 0 20px currentColor;
+  }
+  .neon-gradient {
+    @apply bg-gradient-to-tr from-operarank-accent via-operarank-secondary to-operarank-pink;
+  }
+}

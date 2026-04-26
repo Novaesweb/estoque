@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'manager', 'supervisor'];
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'employeeId', 'role', 'active']) 
+             && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+             && data.employeeId is string && data.employeeId.size() > 0 && data.employeeId.size() <= 20
+             && data.role in ['employee', 'supervisor', 'manager', 'admin']
+             && data.active is bool;
+    }
+
+    function isValidSector(data) {
+      return data.keys().hasAll(['name', 'unit'])
+             && data.name is string && data.name.size() > 0 && data.name.size() <= 50
+             && data.unit in ['caixas', 'volumes', 'pallets', 'cargas'];
+    }
+
+    function isValidClient(data) {
+      return data.keys().hasAll(['name'])
+             && data.name is string && data.name.size() > 0 && data.name.size() <= 100;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['remessa', 'startTime', 'status', 'userId', 'sectorId', 'userName', 'userShift'])
+             && data.remessa is string && data.remessa.size() > 0 && data.remessa.size() <= 128
+             && data.startTime is timestamp
+             && data.status in ['in-progress', 'finished', 'approved', 'rejected']
+             && data.userId == request.auth.uid;
+    }
+
+    // --- Routes ---
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create: if (isOwner(userId)) || isAdmin(); 
+      allow update: if (isAdmin() && isValidUser(incoming())) 
+                    || (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name']));
+      allow delete: if isAdmin();
+
+      // Notifications
+      match /notifications/{noteId} {
+        allow get, list: if isOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Sectors
+    match /sectors/{sectorId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidSector(incoming());
+    }
+
+    // Clients
+    match /clients/{clientId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidClient(incoming());
+    }
+
+    // Tasks
+    match /tasks/{taskId} {
+      allow get: if isSignedIn() && (isAdmin() || existing().userId == request.auth.uid);
+      allow list: if isSignedIn(); 
+      
+      allow create: if isSignedIn() 
+                    && (request.auth.uid == incoming().userId)
+                    && isValidTask(incoming())
+                    && incoming().status == 'in-progress'
+                    && incoming().startTime is timestamp;
+
+      allow update: if isSignedIn() && (
+        // Action: Finalize (by Owner)
+        (isOwner(existing().userId) 
+         && existing().status == 'in-progress'
+         && incoming().status == 'approved'
+         && incoming().endTime == request.time
+         && (incoming().quantity >= 0)
+         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endTime', 'quantity', 'unit', 'clientId', 'route', 'observation']))
+        
+        ||
+        
+        // Action: Admin interventions (Approve/Reject)
+        (isAdmin()
+         && (
+           // Approve/Reject
+           (existing().status == 'finished' && incoming().status in ['approved', 'rejected'] && incoming().approvedAt == request.time)
+         )
+         && incoming().diff(existing()).affectedKeys().hasAny(['status', 'approvedAt', 'approvedBy', 'rejectionReason']))
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Config
+    match /config/general {
+      allow read: if true;
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        incoming().diff(existing()).affectedKeys().hasOnly(['totalTrucks', 'remessasSeparated', 'trucksAtDock', 'trucksWaiting'])
+      );
+      allow create, delete: if isAdmin();
+    }
+
+    // Released Rankings
+    match /rankings_liberados/{rankingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+  }
+}
