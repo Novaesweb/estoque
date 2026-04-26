@@ -1139,7 +1139,7 @@ export default function SystemApp() {
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-8 md:px-10 pb-32 max-w-4xl w-full mx-auto">
+        <main className={`flex-1 px-4 py-8 md:px-10 pb-32 w-full mx-auto transition-all duration-500 ${isSidebarCollapsed ? "max-w-none" : "max-w-5xl"}`}>
           <AnimatePresence mode="wait">
           {tabLoading ? (
             <motion.div
@@ -1197,6 +1197,7 @@ export default function SystemApp() {
               onDeleteTask={handleDeleteTask}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
+              isSidebarCollapsed={isSidebarCollapsed}
             />
           )}
         </AnimatePresence>
@@ -1804,7 +1805,7 @@ function TaskListItem({ task, isAdmin, onDelete, index = 0 }: any) {
   );
 }
 
-function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig, onDeleteTask, activeTab, setActiveTab }: any) {
+function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig, onDeleteTask, activeTab, setActiveTab, isSidebarCollapsed }: any) {
   const [searchActive, setSearchActive] = useState("");
 
   if (activeTab === "loading") return <LoadingView config={config} onUpdateConfig={onUpdateConfig} user={user} />;
@@ -1851,7 +1852,7 @@ function AdminDashboard({ user, tasks, sectors, clients, config, onUpdateConfig,
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 pb-24 selection:bg-[#4facfe]/30">
       {/* 1. TOPO / HEADER */}
       <div className="sticky top-0 z-40 bg-[#050a1e]/80 backdrop-blur-3xl border-b border-white/10 -mx-4 px-6 py-4 md:-mx-10 md:px-10 mb-8">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className={`${isSidebarCollapsed ? "max-w-none" : "max-w-7xl"} mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4`}>
           <div className="flex items-center gap-4">
              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#4facfe] to-[#00f2fe] flex items-center justify-center shadow-[0_0_20px_rgba(79,172,254,0.3)] shrink-0">
                 <TrendingUp size={24} className="text-white" />
