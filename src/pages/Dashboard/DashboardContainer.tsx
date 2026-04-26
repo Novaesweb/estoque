@@ -1,5 +1,7 @@
 import React from "react";
 import { TaskStatus } from "../../types";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { Sidebar } from "../../components/Sidebar";
 import { MobileNav } from "../../components/MobileNav";
 import { HomeView } from "./components/HomeView";
@@ -8,6 +10,7 @@ import { RankingView } from "./components/RankingView";
 import { HistoryView } from "./components/HistoryView";
 import { ManagementView } from "./components/ManagementView";
 import { LoadingView } from "./components/LoadingView";
+import { ManagerHomeView } from "./components/ManagerHomeView";
 import { useAppStore } from "../../store/useAppStore";
 
 interface DashboardContainerProps {
@@ -68,9 +71,26 @@ export function DashboardContainer({
     return Object.values(stats).sort((a: any, b: any) => b.totalItems - a.totalItems);
   }, [tasks]);
 
+  const [now, setNow] = React.useState(new Date());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const renderView = () => {
     switch (activeTab) {
       case "home":
+        if (user?.role === "admin" || user?.role === "manager") {
+          return (
+            <ManagerHomeView 
+              user={user} 
+              tasks={tasks} 
+              config={config} 
+              onUpdateTaskStatus={onUpdateTaskStatus} 
+            />
+          );
+        }
         return (
           <HomeView 
             user={user} 
@@ -116,6 +136,24 @@ export function DashboardContainer({
       <Sidebar />
       
       <main className="flex-1 px-6 py-10 md:px-12 md:py-16 overflow-x-hidden">
+        {(user?.role === "admin" || user?.role === "manager") && (
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-4xl font-black uppercase tracking-tighter text-white">Administrador Geral</h1>
+              <p className="text-[10px] uppercase font-black text-[#6366f1] tracking-[0.3em] mt-1">
+                {user?.shift} • {user?.role === 'admin' ? 'ADMIN' : 'GESTOR'}
+              </p>
+            </div>
+            <div className="hidden md:block text-right">
+              <p className="text-[10px] uppercase font-black text-white/40 tracking-widest mb-1">
+                {format(now, "eeee, dd 'de' MMMM", { locale: ptBR })}
+              </p>
+              <p className="text-2xl font-mono font-black text-white">
+                {format(now, "HH:mm:ss")}
+              </p>
+            </div>
+          </div>
+        )}
         {renderView()}
       </main>
 
