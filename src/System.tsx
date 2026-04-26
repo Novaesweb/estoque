@@ -647,166 +647,247 @@ export default function SystemApp() {
   );
 
   if (view === "login") return (
-    <div className="min-h-screen bg-operarank-dark flex items-center justify-center p-6 sm:p-10 relative overflow-hidden">
-      {/* Decorative Background Elements */}
-      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-operarank-accent/5 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-operarank-secondary/5 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center relative overflow-hidden font-sans">
+      {/* Dynamic Background Image with Overlay */}
+      <div className="absolute inset-0 z-0">
+        <img 
+          src="https://images.unsplash.com/photo-1553413077-190dd305871c?q=80&w=2546&auto=format&fit=crop" 
+          alt="Logistics Center" 
+          className="w-full h-full object-cover opacity-40 scale-105 animate-[pulse_10s_infinite_alternate]"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#020617] via-[#020617]/80 to-transparent" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(99,102,241,0.1),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_70%,rgba(249,115,22,0.05),transparent_50%)]" />
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl w-full items-center relative z-10">
-        {/* Left Column: Login Form */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md mx-auto lg:mx-0">
-          <div className="text-center lg:text-left mb-10">
-            <div className="flex items-center gap-4 mb-4 justify-center lg:justify-start">
-               <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-xl">
-                  <TrendingUp size={32} className="text-operarank-accent" />
-               </div>
-               <div>
-                  <h1 className="text-3xl font-black tracking-tighter uppercase leading-none">Opera<span className="text-operarank-accent">Rank</span></h1>
-                  <p className="text-[10px] text-white/30 uppercase tracking-[0.3em] font-black mt-1">Enterprise Solution</p>
-               </div>
+      {/* Grid HUD Elements */}
+      <div className="absolute inset-0 z-1 pointer-events-none opacity-20" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+
+      <div className="container mx-auto px-6 h-full flex flex-col lg:flex-row items-center relative z-10">
+        {/* Left Section: Login Form */}
+        <motion.div 
+          initial={{ opacity: 0, x: -50 }} 
+          animate={{ opacity: 1, x: 0 }} 
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="w-full lg:w-1/2 flex justify-start pl-0 lg:pl-12 py-10 lg:py-0"
+        >
+          <div className="w-full max-w-md">
+            <div className="mb-12">
+              <motion.div 
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                className="flex items-center gap-4 mb-6"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-operarank-accent via-operarank-secondary to-operarank-accent flex items-center justify-center shadow-[0_0_40px_rgba(99,102,241,0.4)] relative group overflow-hidden">
+                  <TrendingUp size={36} className="text-white relative z-10" />
+                  <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
+                </div>
+                <div>
+                  <h1 className="text-4xl font-black tracking-tighter uppercase leading-none bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+                    Opera<span className="text-operarank-accent">Rank</span>
+                  </h1>
+                  <p className="text-[11px] text-white/40 uppercase tracking-[0.4em] font-black mt-2">Logistics Control System</p>
+                </div>
+              </motion.div>
+              
+              <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl text-green-400">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Protocolo de Segurança Ativo</span>
+              </div>
             </div>
-            
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 mb-6">
-               <ShieldCheck size={12} />
-               <span className="text-[9px] font-black uppercase tracking-wider">Acesso Seguro & Criptografado</span>
+
+            <Card className="p-10 border-white/10 bg-white/[0.02] backdrop-blur-3xl relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-operarank-accent/40 to-transparent" />
+              <div className="absolute -right-20 -top-20 w-40 h-40 bg-operarank-accent/5 rounded-full blur-[60px]" />
+              
+              <div className="mb-10">
+                <h2 className="text-2xl font-black text-white uppercase tracking-tight mb-2">Portal de Acesso</h2>
+                <div className="h-1 w-12 bg-operarank-accent rounded-full" />
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] uppercase font-black text-white/40 tracking-[0.2em] ml-1 flex items-center justify-between">
+                    <span>Matrícula do Operador</span>
+                    <User size={12} className="text-operarank-accent/40" />
+                  </label>
+                  <div className="relative group">
+                    <input 
+                      name="id"
+                      autoFocus
+                      value={loginForm.id}
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        setLoginForm({ ...loginForm, id: val });
+                        if (val) setLoginErrors({ ...loginErrors, id: "" });
+                      }}
+                      className={`w-full bg-white/[0.03] border ${loginErrors.id ? 'border-red-500/50' : 'border-white/10 group-focus-within:border-operarank-accent'} rounded-2xl px-6 py-5 focus:outline-none focus:bg-white/[0.06] transition-all font-mono text-lg tracking-[0.2em] placeholder:text-white/10`} 
+                      placeholder="ID-000000" 
+                    />
+                  </div>
+                  {loginErrors.id && <p className="text-[10px] text-red-500 font-black ml-1 uppercase tracking-tighter">{loginErrors.id}</p>}
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] uppercase font-black text-white/40 tracking-[0.2em] ml-1 flex items-center justify-between">
+                    <span>Chave de Segurança</span>
+                    <Lock size={12} className="text-operarank-accent/40" />
+                  </label>
+                  <div className="relative group">
+                    <input 
+                      name="password"
+                      type="password" 
+                      value={loginForm.password}
+                      onChange={(e) => {
+                        setLoginForm({ ...loginForm, password: e.target.value });
+                        if (e.target.value.length >= 6) setLoginErrors({ ...loginErrors, password: "" });
+                      }}
+                      className={`w-full bg-white/[0.03] border ${loginErrors.password ? 'border-red-500/50' : 'border-white/10 group-focus-within:border-operarank-accent'} rounded-2xl px-6 py-5 focus:outline-none focus:bg-white/[0.06] transition-all font-mono text-lg tracking-[0.2em] placeholder:text-white/10`} 
+                      placeholder="••••••••" 
+                    />
+                  </div>
+                  {loginErrors.password && <p className="text-[10px] text-red-500 font-black ml-1 uppercase tracking-tighter">{loginErrors.password}</p>}
+                </div>
+                
+                {authError && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-start gap-4"
+                  >
+                    <AlertTriangle size={18} className="text-red-500 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-100 font-bold leading-relaxed uppercase tracking-tight">{authError}</p>
+                  </motion.div>
+                )}
+
+                <Button type="submit" loading={loginLoading} className="w-full py-6 group relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                  <span className="relative z-10 flex items-center gap-3">
+                    Autenticar Operação
+                    <LogIn size={20} className="transition-transform group-hover:translate-x-1" />
+                  </span>
+                </Button>
+              </form>
+
+              <div className="mt-12 pt-8 border-t border-white/5 flex flex-col gap-4">
+                <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-[0.2em] text-white/20">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={12} className="text-operarank-accent/40" />
+                    ENCRYPTED NODE 0X42
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-operarank-accent animate-ping" />
+                    SYSTEM LIVE
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="mt-10 flex items-center gap-6 justify-center lg:justify-start">
+               <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-black text-white/20 tracking-widest">Suporte</span>
+                  <span className="text-[11px] font-bold text-white/40">logistica@opera.com</span>
+               </div>
+               <div className="w-[1px] h-6 bg-white/10" />
+               <button 
+                  onClick={handleCreateInitialAdmin}
+                  className="text-[9px] uppercase font-black text-operarank-accent/40 hover:text-operarank-accent transition-colors tracking-[0.2em]"
+               >
+                  Setup do Sistema
+               </button>
             </div>
           </div>
-
-          <Card className="p-8 border-white/10 bg-white/[0.03] backdrop-blur-2xl relative overflow-hidden group">
-            {/* Subtle gloss effect */}
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-            
-            <h2 className="text-xl font-bold mb-8 flex items-center gap-2">
-              Autenticação <span className="text-white/20 font-light">/ Login</span>
-            </h2>
-
-            <form onSubmit={handleLogin} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-black text-white/40 tracking-widest ml-1 flex items-center gap-2">
-                   <User size={10} className="text-operarank-accent" /> Matrícula do Colaborador
-                </label>
-                <div className="relative group">
-                  <input 
-                    name="id"
-                    value={loginForm.id}
-                    onChange={(e) => {
-                      const val = e.target.value.trim();
-                      setLoginForm({ ...loginForm, id: val });
-                      if (val) setLoginErrors({ ...loginErrors, id: "" });
-                    }}
-                    onBlur={() => {
-                      if (!loginForm.id) setLoginErrors({ ...loginErrors, id: "Campo obrigatório" });
-                    }}
-                    className={`w-full bg-white/5 border ${loginErrors.id ? 'border-red-500/50' : 'border-white/10 group-focus-within:border-operarank-accent/50'} rounded-2xl px-5 py-4 focus:outline-none focus:bg-white/[0.08] transition-all font-mono text-sm tracking-widest`} 
-                    placeholder="Ex: 123456" 
-                  />
-                </div>
-                {loginErrors.id && <p className="text-[9px] text-red-400 font-bold ml-1 uppercase tracking-tighter">{loginErrors.id}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-black text-white/40 tracking-widest ml-1 flex items-center gap-2">
-                   <Lock size={10} className="text-operarank-accent" /> Senha de Acesso
-                </label>
-                <div className="relative group">
-                  <input 
-                    name="password"
-                    type="password" 
-                    value={loginForm.password}
-                    onChange={(e) => {
-                      setLoginForm({ ...loginForm, password: e.target.value });
-                      if (e.target.value.length >= 6) setLoginErrors({ ...loginErrors, password: "" });
-                    }}
-                    onBlur={() => {
-                      if (!loginForm.password) setLoginErrors({ ...loginErrors, password: "Campo obrigatório" });
-                      else if (loginForm.password.length < 6) setLoginErrors({ ...loginErrors, password: "Mínimo 6 caracteres" });
-                    }}
-                    className={`w-full bg-white/5 border ${loginErrors.password ? 'border-red-500/50' : 'border-white/10 group-focus-within:border-operarank-accent/50'} rounded-2xl px-5 py-4 focus:outline-none focus:bg-white/[0.08] transition-all font-mono text-sm tracking-widest`} 
-                    placeholder="••••••••" 
-                  />
-                </div>
-                {loginErrors.password && <p className="text-[9px] text-red-400 font-bold ml-1 uppercase tracking-tighter">{loginErrors.password}</p>}
-              </div>
-              
-              {authError && (
-                <motion.div 
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3"
-                >
-                  <AlertCircle size={14} className="text-red-500 shrink-0" />
-                  <p className="text-[11px] text-red-200 font-medium leading-tight">{authError}</p>
-                </motion.div>
-              )}
-
-              <Button type="submit" loading={loginLoading} className="w-full py-5 group">
-                Acessar Painel
-                <ArrowRightCircle size={18} className="transition-transform group-hover:translate-x-1" />
-              </Button>
-            </form>
-
-            <div className="mt-8 pt-6 border-t border-white/5 flex flex-col gap-4">
-              <div className="flex items-center justify-between px-2">
-                 <div className="flex items-center gap-2 text-white/20">
-                    <ShieldCheck size={12} />
-                    <span className="text-[8px] font-bold uppercase tracking-widest">Protocolo SSL Ativo</span>
-                 </div>
-                 <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-              </div>
-            </div>
-          </Card>
-
-          <p className="mt-8 text-center lg:text-left text-[9px] text-white/10 font-bold uppercase tracking-[0.2em]">
-            © 2026 OperaRank Infrastructure • Todos os direitos reservados
-          </p>
         </motion.div>
 
-        {/* Right Column: Dynamic Content (Ranking or Status) */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="hidden lg:block space-y-8 max-h-[80vh] overflow-y-auto pr-4 custom-scrollbar">
-          {config.rankingVisible ? (
-             <RankingView tasks={tasks} sectors={sectors} config={config} />
-          ) : (
-            <div className="space-y-8">
-               <div className="flex flex-col gap-2">
-                <h2 className="text-2xl font-black uppercase tracking-tighter text-white/40">Status do Galpão</h2>
-                <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold font-mono italic">Visualização externa autorizada</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="flex flex-col items-center justify-center p-6">
-                  <p className="text-[10px] uppercase font-black text-white/30 tracking-widest mb-1">Em Curso</p>
-                  <h4 className="text-4xl font-black">{tasks.filter(t => t.status === "in-progress").length}</h4>
-                </Card>
-                <Card className="flex flex-col items-center justify-center p-6">
-                  <p className="text-[10px] uppercase font-black text-white/30 tracking-widest mb-1">Finalizadas</p>
-                  <h4 className="text-4xl font-black text-operarank-accent">{tasks.filter(t => t.status === "approved").length}</h4>
-                </Card>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-[10px] uppercase font-black tracking-widest text-white/30 px-2 leading-loose">Atividade Agora</h4>
-                <div className="space-y-3">
-                  {tasks.filter(t => t.status === "in-progress").slice(0, 5).map(t => (
-                    <div key={t.id} className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-operarank-accent animate-pulse" />
-                        <div>
-                          <p className="text-sm font-bold">#{t.remessa}</p>
-                          <p className="text-[10px] text-white/40 uppercase font-bold">{t.userName} ({t.userShift})</p>
-                        </div>
+        {/* Right Section: Visual Experience / HUD */}
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }} 
+          animate={{ opacity: 1, scale: 1 }} 
+          transition={{ duration: 1, delay: 0.2 }}
+          className="hidden lg:flex lg:w-1/2 h-full items-center justify-center pl-12"
+        >
+          <div className="relative w-full max-w-2xl aspect-video rounded-3xl overflow-hidden border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.5)] group">
+             {/* HUD Overlays */}
+             <div className="absolute inset-0 z-10 pointer-events-none p-8 flex flex-col justify-between">
+                <div className="flex justify-between items-start">
+                   <div className="p-4 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl">
+                      <div className="flex items-center gap-3 mb-2">
+                         <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                         <span className="text-[10px] font-black uppercase tracking-widest">LIVE TRACKING</span>
                       </div>
-                      <span className="text-[9px] uppercase font-bold text-white/20 px-2 py-1 rounded border border-white/10">{t.sectorName}</span>
-                    </div>
-                  ))}
-                  {tasks.filter(t => t.status === "in-progress").length === 0 && (
-                    <p className="text-[10px] text-white/10 italic text-center uppercase tracking-widest">Nenhuma atividade ativa no momento</p>
-                  )}
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <p className="text-[8px] text-white/20 mb-0.5">DOCA 04</p>
+                            <p className="text-sm font-black text-white">{config.trucksAtDock}</p>
+                         </div>
+                         <div>
+                            <p className="text-[8px] text-white/20 mb-0.5">PENDENTE</p>
+                            <p className="text-sm font-black text-white">{config.trucksWaiting}</p>
+                         </div>
+                      </div>
+                   </div>
+                   <div className="flex flex-col items-end gap-2">
+                      <div className="w-12 h-1 bg-white/10 rounded-full overflow-hidden">
+                         <motion.div animate={{ x: [-48, 48] }} transition={{ duration: 2, repeat: Infinity }} className="w-full h-full bg-operarank-accent shadow-[0_0_10px_rgba(99,102,241,1)]" />
+                      </div>
+                      <span className="text-[9px] font-black text-white/20 uppercase tracking-[0.3em]">SECURE_FEED</span>
+                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+
+                <div className="flex justify-between items-end">
+                   <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                         <div className="w-1 h-3 bg-operarank-accent" />
+                         <span className="text-[10px] font-black uppercase tracking-widest text-white/60">CARREGAMENTO TOTAL</span>
+                      </div>
+                      <div className="flex items-end gap-3">
+                         <span className="text-4xl font-black text-white leading-none">{config.remessasSeparated}</span>
+                         <span className="text-xs text-operarank-accent font-black uppercase mb-1">/ {config.totalTrucks} PLAN</span>
+                      </div>
+                   </div>
+                   <div className="flex flex-col items-end">
+                      {/* Technical Chart HUD (Simulated) */}
+                      <div className="flex gap-1 h-12 items-end">
+                         {[40, 70, 45, 90, 65, 80, 55].map((h, i) => (
+                            <motion.div 
+                              key={i} 
+                              initial={{ height: 0 }} 
+                              animate={{ height: `${h}%` }} 
+                              transition={{ duration: 1, delay: i * 0.1, repeat: Infinity, repeatType: "mirror" }}
+                              className="w-1 bg-gradient-to-t from-operarank-accent/20 to-operarank-accent rounded-full" 
+                            />
+                         ))}
+                      </div>
+                      <p className="text-[8px] font-black uppercase tracking-widest text-white/20 mt-2">DENSITY_MATRIX_V4</p>
+                   </div>
+                </div>
+             </div>
+
+             {/* Background Image inside HUD container */}
+             <img 
+               src="https://images.unsplash.com/photo-1553413077-190dd305871c?q=80&w=2546&auto=format&fit=crop" 
+               alt="Warehouse" 
+               className="absolute inset-0 w-full h-full object-cover scale-110 group-hover:scale-100 transition-transform duration-1000"
+               referrerPolicy="no-referrer"
+             />
+             <div className="absolute inset-0 bg-gradient-to-t from-[#020617]/80 to-transparent" />
+          </div>
         </motion.div>
       </div>
+
+      <footer className="absolute bottom-6 left-6 right-6 flex justify-between items-center z-10 pointer-events-none">
+         <div className="flex items-center gap-4 text-[9px] font-black text-white/10 uppercase tracking-[0.4em]">
+            <span className="flex items-center gap-1"><div className="w-1 h-1 rounded-full bg-white/20" /> L1-LOG-ALPHA</span>
+            <span className="flex items-center gap-1"><div className="w-1 h-1 rounded-full bg-white/20" /> HUB-STATION-DX</span>
+         </div>
+         <div className="flex items-center gap-6">
+            <LiveClock />
+         </div>
+      </footer>
     </div>
   );
+
 
   return (
     <div className="min-h-screen bg-operarank-dark text-white font-sans overflow-x-hidden selection:bg-operarank-accent/30 flex flex-col md:flex-row">
