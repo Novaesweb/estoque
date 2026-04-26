@@ -37,7 +37,8 @@ import {
   Lock,
   ArrowRightCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  RotateCcw
 } from "lucide-react";
 
 // --- Firestore Error Handling ---
@@ -1592,7 +1593,29 @@ function LoadingView({ config, onUpdateConfig, user }: any) {
                     />
                   </div>
                 </div>
-                <Button type="submit" className="w-full py-4 shadow-xl">Confirmar Planejamento</Button>
+                <div className="flex gap-3">
+                  <Button type="submit" className="flex-1 py-4 shadow-xl">Confirmar Planejamento</Button>
+                  <Button 
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      if (window.confirm("Deseja realmente redefinir todos os indicadores para zero?")) {
+                        const resetValues = {
+                          totalTrucks: 0,
+                          trucksAtDock: 0,
+                          remessasSeparated: 0,
+                          trucksWaiting: 0
+                        };
+                        await onUpdateConfig(resetValues);
+                        setEditForm(resetValues);
+                        setIsEditing(false);
+                      }
+                    }}
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/10 px-6"
+                  >
+                    <RotateCcw size={16} className="mr-2" /> Redefinir Tudo
+                  </Button>
+                </div>
               </form>
             </Card>
           </motion.div>
