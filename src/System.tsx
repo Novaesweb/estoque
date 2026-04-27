@@ -21,7 +21,8 @@ import {
   getDocs,
   where,
   deleteDoc,
-  Timestamp
+  Timestamp,
+  increment
 } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
 import { 
@@ -234,6 +235,14 @@ export default function SystemApp() {
         status: "approved" // Em produção seria "pending-approval" se necessário
       });
       
+      // OPERATIONAL RULE: Only "Expedição" sector counts towards the daily total (config.remessasSeparated)
+      // Separation and Receiving tasks do NOT affect this metric.
+      if (activeTask.sectorName === "Expedição") {
+         await updateDoc(doc(db, "config", "app"), {
+            remessasSeparated: increment(1)
+         });
+      }
+
       if (config.webhookUrl) {
          triggerWebhook(config.webhookUrl, {
             type: "TASK_FINISHED",

@@ -37,16 +37,25 @@ interface ManagerHomeViewProps {
 
 export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: ManagerHomeViewProps) {
   const [searchTerm, setSearchTerm] = React.useState("");
+  const [rankShift, setRankShift] = React.useState("all");
 
   const todayTasks = useMemo(() => 
-    tasks.filter(t => isToday(new Date(t.startTime))),
+    tasks.filter(t => {
+      const date = t.startTime?.toDate ? t.startTime.toDate() : new Date(t.startTime);
+      return isToday(date);
+    }),
     [tasks]
   );
 
   const stats = useMemo(() => {
-    const active = todayTasks.filter(t => t.status === "in_progress").length;
-    const completed = todayTasks.filter(t => t.status === "completed").length;
-    const totalItems = todayTasks.reduce((acc, t) => acc + (t.items || 0), 0);
+    const active = todayTasks.filter(t => t.status === "in_progress" || t.status === "pending").length;
+    const approvedTasks = todayTasks.filter(t => t.status === "approved");
+    const completed = approvedTasks.length;
+    
+    // Only "Expedição" counts for total items according to rule
+    const totalItems = approvedTasks
+        .filter(t => t.sectorName === "Expedição")
+        .reduce((acc, t) => acc + Number(t.quantity || 0), 0);
     
     // Performance by shift (mock data logic for now based on tasks)
     const shiftData = [
@@ -67,6 +76,32 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
 
     return { active, completed, totalItems, shiftData, evolutionData };
   }, [todayTasks]);
+
+  const ranking = useMemo(() => {
+    // Only approved tasks from "Expedição" count for ranking
+    const relevantTasks = todayTasks.filter(t => t.status === "approved" && t.sectorName === "Expedição");
+    const filteredByShift = rankShift === "all" ? relevantTasks : relevantTasks.filter(t => t.userShift === rankShift || t.shift === rankShift);
+
+    const userTotals = filteredByShift.reduce((acc: any, task) => {
+        const userId = task.userId;
+        if (!acc[userId]) {
+            acc[userId] = {
+                id: userId,
+                name: task.userName || "Sem Nome",
+                shift: task.userShift || task.shift,
+                total: 0
+            };
+        }
+        acc[userId].total += Number(task.quantity || 0);
+        return acc;
+    }, {});
+
+    return Object.values(userTotals)
+        .sort((a: any, b: any) => b.total - a.total)
+        .slice(0, 10);
+  }, [todayTasks, rankShift]);
+
+  const topScore = ranking[0]?.total || 1;
 
   const filteredTasks = todayTasks.filter(task => 
     task.truckPlate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -167,7 +202,125 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
         </div>
       </Card>
 
-      {/* 🔹 4. GRÁFICOS (lado a lado) */}
+      </div>
+
+      {/* 🔹 5. RANKING DE PRODUTIVIDADE (TOP 10) */}
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                    <BarChart3 size={24} />
+                </div>
+                <div>
+                    <h3 className="text-2xl font-black uppercase tracking-tighter text-white leading-none mb-1">Top 10 Colaboradores</h3>
+                    <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Baseado na produção de caixas/volumes (Finalizadas)</p>
+                </div>
+            </div>
+
+            <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
+                {["all", "Turno 1", "Turno 2", "Turno 3"].map(shift => (
+                    <button 
+                        key={shift}
+                        onClick={() => setRankShift(shift)}
+                        className={`px-4 py-2 rounded-lg text-[10px] uppercase font-black tracking-widest transition-all ${
+                            rankShift === shift 
+                                ? "bg-white text-black shadow-xl" 
+                                : "text-white/30 hover:text-white"
+                        }`}
+                    >
+                        {shift === "all" ? "Todos" : shift}
+                    </button>
+                ))}
+            </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
+            <AnimatePresence mode="popLayout">
+                {ranking.length > 0 ? ranking.map((item: any, idx) => {
+                    const percentage = Math.round((item.total / topScore) * 100);
+                    const isTop1 = idx === 0;
+                    
+                    return (
+                        <motion.div
+                            key={item.id}
+                            layout
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ delay: idx * 0.05 }}
+                        >
+                            <Card className={`relative overflow-hidden group hover:scale-[1.01] transition-all duration-300 ${
+                                isTop1 ? 'border-amber-500/30 bg-amber-500/[0.03] p-8' : 'border-white/5 bg-white/[0.01] p-6'
+                            }`}>
+                                {isTop1 && (
+                                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-transparent pointer-events-none" />
+                                )}
+                                
+                                <div className="flex items-center gap-6 relative z-10">
+                                    {/* Position / Medal */}
+                                    <div className="flex flex-col items-center justify-center w-12 shrink-0">
+                                        {idx === 0 ? <span className="text-4xl">🥇</span> :
+                                         idx === 1 ? <span className="text-3xl">🥈</span> :
+                                         idx === 2 ? <span className="text-2xl">🥉</span> :
+                                         <span className="text-lg font-black text-white/20">#{idx + 1}</span>}
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div>
+                                                <h4 className={`font-black uppercase tracking-tighter truncate ${
+                                                    isTop1 ? 'text-2xl text-white' : 'text-lg text-white/80'
+                                                }`}>
+                                                    {item.name}
+                                                </h4>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                                        item.shift === 'Turno 1' ? 'text-emerald-500' :
+                                                        item.shift === 'Turno 2' ? 'text-indigo-500' : 'text-orange-500'
+                                                    }`}>
+                                                        {item.shift}
+                                                    </span>
+                                                    <span className="w-1 h-1 rounded-full bg-white/10" />
+                                                    <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Colaborador</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="flex items-baseline justify-end gap-1">
+                                                    <AnimatedNumber value={item.total} className={`font-black font-mono ${isTop1 ? 'text-3xl text-amber-500' : 'text-xl text-white'}`} />
+                                                    <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Caixas</span>
+                                                </div>
+                                                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">{percentage}% Produtividade</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Progress Bar */}
+                                        <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                            <motion.div 
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${percentage}%` }}
+                                                transition={{ duration: 1.2, ease: "easeOut" }}
+                                                className={`h-full rounded-full bg-gradient-to-r ${
+                                                    isTop1 ? 'from-amber-400 to-orange-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 
+                                                    'from-indigo-500 to-purple-600'
+                                                }`}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </Card>
+                        </motion.div>
+                    );
+                }) : (
+                    <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-[2rem] bg-white/[0.01]">
+                        <p className="text-[10px] font-black uppercase text-white/10 tracking-[0.4em]">Aguardando dados de produção...</p>
+                    </div>
+                )}
+            </AnimatePresence>
+        </div>
+      </div>
+
+      {/* 🔹 6. LOG DE OPERAÇÃO (parte inferior) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card className="p-8 bg-white/[0.01]">
             <div className="flex items-center gap-3 mb-8">
@@ -274,16 +427,16 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
                         transition={{ delay: idx * 0.05 }}
                     >
                         <Card className="p-6 hover:border-white/20 transition-all group cursor-pointer relative overflow-hidden bg-white/[0.02]">
-                            {task.status === 'completed' && (
+                            {task.status === 'approved' && (
                                 <div className="absolute top-0 right-0 p-4">
                                     <div className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border border-emerald-500/20">
-                                        Finalizada
+                                        Aprovada
                                     </div>
                                 </div>
                             )}
                             <div className="flex items-start gap-4">
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-                                    task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
+                                    task.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
                                 }`}>
                                     <Truck size={24} />
                                 </div>
@@ -327,6 +480,33 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
     </div>
   );
 }
+
+const AnimatedNumber = ({ value, className }: { value: number, className?: string }) => {
+    const [displayValue, setDisplayValue] = React.useState(0);
+
+    React.useEffect(() => {
+        let start = displayValue;
+        const end = value;
+        const duration = 1000;
+        const startTime = performance.now();
+
+        const update = (now: number) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const current = Math.floor(start + (end - start) * progress);
+            
+            setDisplayValue(current);
+
+            if (progress < 1) {
+                requestAnimationFrame(update);
+            }
+        };
+
+        requestAnimationFrame(update);
+    }, [value]);
+
+    return <span className={className}>{displayValue.toLocaleString()}</span>;
+};
 
 const SummaryCard = ({ label, value, icon, color, highlight = false }: any) => (
   <motion.div

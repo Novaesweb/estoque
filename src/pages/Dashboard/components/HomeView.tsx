@@ -60,14 +60,17 @@ export function HomeView({
 
   // Stats calculation
   const todayTasks = useMemo(() => 
-    tasks.filter(t => isToday(new Date(t.startTime))),
+    tasks.filter(t => {
+      const date = t.startTime?.toDate ? t.startTime.toDate() : new Date(t.startTime);
+      return isToday(date);
+    }),
     [tasks]
   );
 
   const stats = useMemo(() => {
-    const expedicao = todayTasks.filter(t => t.sector === 'Expedição' && t.status === 'completed').length;
-    const separacao = tasks.filter(t => t.status === 'in_progress').length;
-    const recebimento = todayTasks.filter(t => t.sector === 'Recebimento' && t.status === 'completed').length;
+    const expedicao = todayTasks.filter(t => t.sectorName === 'Expedição' && t.status === 'approved').length;
+    const separacao = tasks.filter(t => t.status === 'in-progress').length;
+    const recebimento = todayTasks.filter(t => t.sectorName === 'Recebimento' && t.status === 'approved').length;
     const finalizadasGlobal = config.remessasSeparated || 0;
     const metaGlobal = config.totalTrucks || 0;
     const faltamGlobal = Math.max(0, metaGlobal - finalizadasGlobal);
