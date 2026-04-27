@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { 
   Truck, 
   CheckCircle2, 
@@ -72,9 +72,9 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus, onUpd
     
     // Performance by shift (mock data logic for now based on tasks)
     const shiftData = [
-      { name: '1º Turno', value: todayTasks.filter(t => t.shift === '1º Turno').length },
-      { name: '2º Turno', value: todayTasks.filter(t => t.shift === '2º Turno').length },
-      { name: '3º Turno', value: todayTasks.filter(t => t.shift === '3º Turno').length },
+      { name: 'Turno 1', value: todayTasks.filter(t => t.shift === 'Turno 1' || t.userShift === 'Turno 1').length },
+      { name: 'Turno 2', value: todayTasks.filter(t => t.shift === 'Turno 2' || t.userShift === 'Turno 2').length },
+      { name: 'Turno 3', value: todayTasks.filter(t => t.shift === 'Turno 3' || t.userShift === 'Turno 3').length },
     ];
 
     // Hourly evolution (mock data for visualization)
@@ -119,7 +119,11 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus, onUpd
     task.truckPlate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.driverName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.sector?.toLowerCase().includes(searchTerm.toLowerCase())
-  ).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+  ).sort((a, b) => {
+    const dateA = a.startTime?.toDate ? a.startTime.toDate() : new Date(a.startTime);
+    const dateB = b.startTime?.toDate ? b.startTime.toDate() : new Date(b.startTime);
+    return dateB.getTime() - dateA.getTime();
+  });
 
   const progress = Math.min(100, Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100));
 
@@ -578,7 +582,7 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus, onUpd
                                         <div>
                                             <p className="text-[8px] font-black text-white/20 uppercase tracking-widest mb-1">Início</p>
                                             <p className="text-[10px] font-black text-white uppercase tracking-tighter font-mono">
-                                                {format(new Date(task.startTime), 'HH:mm')}
+                                                {format(task.startTime?.toDate ? task.startTime.toDate() : new Date(task.startTime), 'HH:mm')}
                                             </p>
                                         </div>
                                     </div>

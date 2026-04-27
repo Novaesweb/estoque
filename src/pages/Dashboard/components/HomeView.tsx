@@ -206,7 +206,7 @@ export function HomeView({
             className="text-[10px] font-bold text-white/40 uppercase tracking-wide"
           >
             {todayTasks.length > 0 
-                ? `${todayTasks[0].userName} finalizou remessa #${todayTasks[0].remessa} no setor ${todayTasks[0].sector} às ${format(new Date(todayTasks[0].startTime), 'HH:mm')}`
+                ? `${todayTasks[0].userName} finalizou remessa #${todayTasks[0].remessa} no setor ${todayTasks[0].sector} às ${format(todayTasks[0].startTime?.toDate ? todayTasks[0].startTime.toDate() : new Date(todayTasks[0].startTime), 'HH:mm')}`
                 : "Aguardando novos registros para monitoramento em tempo real..."
             }
           </motion.p>
