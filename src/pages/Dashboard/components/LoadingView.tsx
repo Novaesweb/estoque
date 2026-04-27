@@ -23,7 +23,17 @@ interface LoadingViewProps {
 }
 
 export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingViewProps) {
-  const efficiency = Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100);
+  const [localConfig, setLocalConfig] = React.useState<AppConfig>(config);
+
+  React.useEffect(() => {
+    setLocalConfig(config);
+  }, [config]);
+
+  const handleSave = () => {
+    onUpdateConfig(localConfig);
+  };
+
+  const efficiency = Math.round((localConfig.remessasSeparated / (localConfig.totalTrucks || 1)) * 100);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-32">
@@ -63,11 +73,11 @@ export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingVi
                 <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
                         <p className="text-[8px] font-black uppercase text-white/20 tracking-widest mb-1">Total</p>
-                        <p className="text-2xl font-black font-mono text-white">{config.totalTrucks}</p>
+                        <p className="text-2xl font-black font-mono text-white">{localConfig.totalTrucks}</p>
                     </div>
                     <div className="bg-[#6366f1]/10 border border-[#6366f1]/20 rounded-2xl p-4 text-center">
                         <p className="text-[8px] font-black uppercase text-[#6366f1] tracking-widest mb-1">Feito</p>
-                        <p className="text-2xl font-black font-mono text-[#6366f1]">{config.remessasSeparated}</p>
+                        <p className="text-2xl font-black font-mono text-[#6366f1]">{localConfig.remessasSeparated}</p>
                     </div>
                 </div>
             </div>
@@ -76,7 +86,7 @@ export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingVi
         <Card className="p-8 flex flex-col justify-center items-center text-center bg-gradient-to-br from-[#6366f1]/10 to-transparent border-[#6366f1]/20">
             <Package size={40} className="text-[#6366f1] mb-4" />
             <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-2">Restante para Meta</h4>
-            <span className="text-5xl font-black font-mono text-white mb-2">{Math.max(0, config.totalTrucks - config.remessasSeparated)}</span>
+            <span className="text-5xl font-black font-mono text-white mb-2">{Math.max(0, localConfig.totalTrucks - localConfig.remessasSeparated)}</span>
             <p className="text-[9px] font-black uppercase text-[#6366f1] tracking-widest">Remessas Pendentes</p>
         </Card>
       </div>
@@ -97,14 +107,14 @@ export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingVi
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     <ControlPanel 
                         label="Meta Total de Remessas"
-                        value={config.totalTrucks}
-                        onChange={(val) => onUpdateConfig({ totalTrucks: val })}
+                        value={localConfig.totalTrucks}
+                        onChange={(val: number) => setLocalConfig({ ...localConfig, totalTrucks: val })}
                         icon={<Package size={18} />}
                     />
                     <ControlPanel 
                         label="Progresso de Carregamento"
-                        value={config.remessasSeparated}
-                        onChange={(val) => onUpdateConfig({ remessasSeparated: val })}
+                        value={localConfig.remessasSeparated}
+                        onChange={(val: number) => setLocalConfig({ ...localConfig, remessasSeparated: val })}
                         icon={<TrendingUp size={18} />}
                     />
                 </div>
@@ -126,15 +136,15 @@ export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingVi
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-10">
                     <ControlPanel 
                         label="Veículos em Doca"
-                        value={config.trucksAtDock}
-                        onChange={(val) => onUpdateConfig({ trucksAtDock: val })}
+                        value={localConfig.trucksAtDock}
+                        onChange={(val: number) => setLocalConfig({ ...localConfig, trucksAtDock: val })}
                         icon={<ArrowRight size={18} />}
                         color="text-[#f59e0b]"
                     />
                     <ControlPanel 
                         label="Veículos em Espera"
-                        value={config.trucksWaiting}
-                        onChange={(val) => onUpdateConfig({ trucksWaiting: val })}
+                        value={localConfig.trucksWaiting}
+                        onChange={(val: number) => setLocalConfig({ ...localConfig, trucksWaiting: val })}
                         icon={<Clock size={18} />}
                         color="text-[#f59e0b]"
                     />
@@ -143,13 +153,13 @@ export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingVi
                 <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                     {[...Array(6)].map((_, i) => (
                         <div key={i} className={`h-20 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all duration-500 ${
-                            i < config.trucksAtDock 
+                            i < localConfig.trucksAtDock 
                                 ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30 text-[#f59e0b] shadow-[0_0_15px_rgba(245,158,11,0.1)]' 
                                 : 'bg-white/[0.02] border-white/5 text-white/5'
                         }`}>
                             <span className="text-[8px] font-black uppercase opacity-40">Doca {i+1}</span>
-                            <TruckIcon size={24} className={i < config.trucksAtDock ? 'animate-pulse' : ''} />
-                            {i < config.trucksAtDock && (
+                            <TruckIcon size={24} className={i < localConfig.trucksAtDock ? 'animate-pulse' : ''} />
+                            {i < localConfig.trucksAtDock && (
                                 <div className="w-1 h-1 rounded-full bg-[#f59e0b]" />
                             )}
                         </div>
@@ -184,7 +194,7 @@ export function LoadingView({ config, onUpdateConfig, configLoading }: LoadingVi
                 </div>
 
                 <Button 
-                    onClick={() => onUpdateConfig({})}
+                    onClick={handleSave}
                     loading={configLoading}
                     className="w-full py-6 text-[10px] font-black uppercase tracking-[0.2em] bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow-[0_10px_20px_rgba(99,102,241,0.2)]"
                 >
@@ -219,9 +229,12 @@ const ControlPanel = ({ label, value, onChange, icon, color = "text-[#6366f1]" }
             >
                 -
             </button>
-            <div className="w-20 text-center">
-                <span className="text-3xl font-black font-mono text-white tracking-tighter">{value || 0}</span>
-            </div>
+            <input 
+                type="number"
+                value={value || 0}
+                onChange={(e) => onChange(parseInt(e.target.value) || 0)}
+                className="w-20 bg-transparent text-center text-3xl font-black font-mono text-white tracking-tighter focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
             <button 
                 onClick={() => onChange((value || 0) + 1)}
                 className="w-12 h-12 rounded-full flex items-center justify-center text-white/30 hover:text-white hover:bg-white/5 transition-all text-2xl font-light"
