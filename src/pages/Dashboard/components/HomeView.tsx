@@ -10,7 +10,12 @@ import {
   Clock, 
   ChevronRight,
   LayoutDashboard,
-  AlertCircle
+  AlertCircle,
+  BarChart3,
+  Award,
+  Star,
+  Globe,
+  TrendingUp
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Card } from "../../../components/ui/Card";
@@ -76,7 +81,23 @@ export function HomeView({
     const faltamGlobal = Math.max(0, metaGlobal - finalizadasGlobal);
     const progressGlobal = Math.min(100, Math.round((finalizadasGlobal / (metaGlobal || 1)) * 100));
 
-    return { expedicao, separacao, recebimento, finalizadasGlobal, metaGlobal, faltamGlobal, progressGlobal };
+    // RANKING CALCULATION (Integrated)
+    const relevantTasks = todayTasks.filter(t => t.status === "approved" && t.sectorName === "Expedição");
+    const userTotals: any = {};
+    relevantTasks.forEach(t => {
+        if (!userTotals[t.userId]) {
+            userTotals[t.userId] = { id: t.userId, name: t.userName, total: 0, shift: t.userShift || t.shift };
+        }
+        userTotals[t.userId].total += (t.quantity || 0);
+    });
+
+    const rankingData = Object.values(userTotals)
+        .sort((a: any, b: any) => b.total - a.total)
+        .slice(0, 10);
+
+    const topScore = rankingData[0]?.total || 1;
+
+    return { expedicao, separacao, recebimento, finalizadasGlobal, metaGlobal, faltamGlobal, progressGlobal, rankingData, topScore };
   }, [todayTasks, tasks, config]);
 
   const handleFinish = (e: any) => {
@@ -277,6 +298,86 @@ export function HomeView({
                     sub="Entradas"
                     onClick={() => {}} 
                 />
+            </div>
+
+            {/* 🔹 RANKING DE PRODUTIVIDADE (TOP 10) - INTEGRADO */}
+            <div className="space-y-6 pt-4">
+                <div className="flex items-center gap-4 px-2">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                        <Award size={20} />
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-black uppercase tracking-widest text-white leading-none mb-1">Elite da Operação</h3>
+                        <p className="text-[8px] text-white/30 uppercase font-black tracking-widest">Top 10 Colaboradores (Expedição)</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 relative">
+                    <AnimatePresence mode="popLayout">
+                        {!config.rankingVisible ? (
+                            <motion.div
+                                key="locked-ranking-emp"
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="py-16 text-center border border-dashed border-white/10 rounded-[2rem] bg-white/[0.01]"
+                            >
+                                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white/10 mx-auto mb-4">
+                                    <Clock size={24} />
+                                </div>
+                                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-white/20">Ranking Temporariamente Privado</h4>
+                                <p className="text-[7px] font-black uppercase text-white/5 tracking-[0.3em] mt-2">Aguardando liberação da gestão</p>
+                            </motion.div>
+                        ) : stats.rankingData.length > 0 ? stats.rankingData.map((item: any, idx) => {
+                            const percentage = Math.round((item.total / stats.topScore) * 100);
+                            const isTop1 = idx === 0;
+                            
+                            return (
+                                <motion.div
+                                    key={item.id}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className={`relative overflow-hidden group p-4 rounded-2xl border transition-all ${
+                                        isTop1 
+                                            ? "bg-amber-500/[0.03] border-amber-500/20 shadow-[0_0_20px_rgba(245,158,11,0.05)]" 
+                                            : "bg-white/[0.02] border-white/5"
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between relative z-10">
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${
+                                                idx === 0 ? "bg-amber-500 text-black shadow-lg" :
+                                                idx === 1 ? "bg-slate-300 text-black" :
+                                                idx === 2 ? "bg-orange-400 text-black" : "bg-white/5 text-white/40"
+                                            }`}>
+                                                {idx + 1}º
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-black text-white uppercase leading-none mb-1">{item.name}</p>
+                                                <p className="text-[7px] font-black text-white/20 uppercase tracking-[0.2em]">{item.shift}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-sm font-black font-mono text-white tracking-tighter">{item.total.toLocaleString()}</p>
+                                            <p className="text-[7px] font-black text-[#4facfe] uppercase tracking-widest">Caixas</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                        <motion.div 
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${percentage}%` }}
+                                            className={`h-full rounded-full ${isTop1 ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]" : "bg-[#4facfe]/40"}`}
+                                        />
+                                    </div>
+                                </motion.div>
+                            );
+                        }) : (
+                            <div className="py-10 text-center">
+                                <p className="text-[8px] font-black uppercase text-white/10 tracking-[0.3em]">Nenhum dado produtivo hoje</p>
+                            </div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
         </div>
 

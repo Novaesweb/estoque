@@ -89,6 +89,7 @@ export function DashboardContainer({
               tasks={tasks} 
               config={config} 
               onUpdateTaskStatus={onUpdateTaskStatus} 
+              onUpdateConfig={onUpdateConfig}
             />
           );
         }

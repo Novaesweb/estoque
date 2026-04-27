@@ -8,8 +8,12 @@ import {
   Package,
   Calendar,
   AlertCircle,
+  Filter,
   BarChart3,
-  Activity
+  Activity,
+  Map as MapIcon,
+  ChevronLeft,
+  RefreshCw
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Card } from "../../../components/ui/Card";
@@ -33,11 +37,14 @@ interface ManagerHomeViewProps {
   tasks: Task[];
   config: AppConfig;
   onUpdateTaskStatus: (taskId: string, status: any) => void;
+  onUpdateConfig: (config: any) => void;
 }
 
-export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: ManagerHomeViewProps) {
-  const [searchTerm, setSearchTerm] = React.useState("");
-  const [rankShift, setRankShift] = React.useState("all");
+export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus, onUpdateConfig }: ManagerHomeViewProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [rankShift, setRankShift] = useState("all");
+  const [showDailyLoad, setShowDailyLoad] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const todayTasks = useMemo(() => 
     tasks.filter(t => {
@@ -51,6 +58,12 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
     const active = todayTasks.filter(t => t.status === "in_progress" || t.status === "pending").length;
     const approvedTasks = todayTasks.filter(t => t.status === "approved");
     const completed = approvedTasks.length;
+    
+    // Mapa do Dia Logic
+    const inProgress = todayTasks.filter(t => t.status === "in-progress" && t.sectorName === "Expedição").length;
+    const total = config.totalTrucks || 0;
+    const separated = config.remessasSeparated || 0;
+    const waiting = Math.max(0, total - (inProgress + separated));
     
     // Only "Expedição" counts for total items according to rule
     const totalItems = approvedTasks
@@ -74,11 +87,10 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
       { hour: '21:00', prod: 28 },
     ];
 
-    return { active, completed, totalItems, shiftData, evolutionData };
-  }, [todayTasks]);
+    return { active, completed, totalItems, inProgress, total, separated, waiting, shiftData, evolutionData };
+  }, [todayTasks, config]);
 
   const ranking = useMemo(() => {
-    // Only approved tasks from "Expedição" count for ranking
     const relevantTasks = todayTasks.filter(t => t.status === "approved" && t.sectorName === "Expedição");
     const filteredByShift = rankShift === "all" ? relevantTasks : relevantTasks.filter(t => t.userShift === rankShift || t.shift === rankShift);
 
@@ -111,10 +123,119 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
 
   const progress = Math.min(100, Math.round((config.remessasSeparated / (config.totalTrucks || 1)) * 100));
 
+  if (showDailyLoad) {
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20 max-w-6xl mx-auto">
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={() => setShowDailyLoad(false)}
+                    className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                >
+                    <ChevronLeft size={24} />
+                </button>
+                <div>
+                    <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Carregamento do Dia</h2>
+                    <p className="text-[10px] text-[#4facfe] font-black uppercase tracking-[0.3em]">Operarank • Mapa Logístico</p>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+                <div className="bg-white/5 p-1 rounded-xl border border-white/5 flex">
+                    <button className="px-4 py-2 bg-white text-black rounded-lg text-[10px] font-black uppercase tracking-widest">Hoje</button>
+                    <button className="px-4 py-2 text-white/30 rounded-lg text-[10px] font-black uppercase tracking-widest">Histórico</button>
+                </div>
+                <button 
+                    onClick={() => {
+                        setRefreshing(true);
+                        setTimeout(() => setRefreshing(false), 1000);
+                    }}
+                    className={`w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all ${refreshing ? "animate-spin" : ""}`}
+                >
+                    <RefreshCw size={20} />
+                </button>
+            </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <DailyCard 
+                label="Total para carregar" 
+                value={stats.total} 
+                sub="Caminhões" 
+                icon={<Truck size={32} />} 
+                color="from-indigo-600 to-violet-700"
+            />
+            <DailyCard 
+                label="Na Doca" 
+                value={stats.inProgress} 
+                sub="Em Operação" 
+                icon={<Truck size={32} className="rotate-12" />} 
+                color="from-amber-500 to-orange-600"
+                active
+            />
+            <DailyCard 
+                label="Remessas Separadas" 
+                value={stats.separated} 
+                sub="Prontas para Carga" 
+                icon={<CheckCircle2 size={32} />} 
+                color="from-emerald-500 to-teal-600"
+            />
+            <DailyCard 
+                label="Na Rua Aguardando" 
+                value={stats.waiting} 
+                sub="Em espera" 
+                icon={<MapIcon size={32} />} 
+                color="from-slate-700 to-slate-900"
+            />
+        </div>
+
+        <Card className="p-10 bg-white/[0.02] border-white/5 rounded-[3rem]">
+            <div className="flex items-center justify-between mb-8">
+                <h3 className="text-xl font-black uppercase tracking-tighter text-white">Detalhamento por Turno</h3>
+                <div className="flex gap-2">
+                    {["Turno 1", "Turno 2", "Turno 3"].map(t => (
+                        <div key={t} className="px-4 py-2 bg-white/5 rounded-xl border border-white/5 text-[10px] font-black text-white/40 uppercase tracking-widest">{t}</div>
+                    ))}
+                </div>
+            </div>
+            <div className="py-20 text-center">
+                <p className="text-white/10 font-black uppercase tracking-[0.4em]">Gráficos de fluxo operacional em tempo real</p>
+            </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20 max-w-[1600px] mx-auto">
       
-      {/* 🔹 1. NOTIFICAÇÕES RECENTES (Barra Horizontal) */}
+      {/* 🔹 1. TOPO (Header fixo modificado) */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#4facfe] to-[#00f2fe] flex items-center justify-center text-white shadow-[0_0_30px_rgba(79,172,254,0.3)]">
+                <Activity size={32} />
+            </div>
+            <div>
+                <h2 className="text-4xl font-black uppercase tracking-tighter text-white leading-none">Dashboard Gestão</h2>
+                <p className="text-[10px] text-[#4facfe] font-black uppercase tracking-[0.3em] mt-2">Operarank • Painel Administrativo</p>
+            </div>
+        </div>
+        
+        <div className="flex items-center gap-4">
+            <button 
+                onClick={() => setShowDailyLoad(true)}
+                className="px-8 py-4 rounded-2xl bg-white text-black font-black uppercase tracking-widest text-[10px] shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+            >
+                <Truck size={16} />
+                Ver Carregamento do Dia
+            </button>
+            <div className="text-right pl-6 border-l border-white/10">
+                <p className="text-xs font-black text-white uppercase tracking-widest">{user?.name}</p>
+                <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">{user?.shift}</p>
+            </div>
+        </div>
+      </div>
+
+      {/* 🔹 2. NOTIFICAÇÕES RECENTES */}
       <div className="w-full bg-[#6366f1]/10 border border-[#6366f1]/20 rounded-xl px-6 py-3 flex items-center gap-4 overflow-hidden">
         <div className="flex items-center gap-2 text-[#6366f1] shrink-0">
           <AlertCircle size={16} className="animate-pulse" />
@@ -135,36 +256,7 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
         </div>
       </div>
 
-      {/* 🔹 2. RESUMO PRINCIPAL (cards grandes) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <SummaryCard 
-          label="Carregamento do Dia" 
-          value={config.totalTrucks} 
-          icon={<Package size={24} />} 
-          color="from-indigo-600 to-violet-600"
-          highlight
-        />
-        <SummaryCard 
-          label="Em Andamento" 
-          value={stats.active} 
-          icon={<Activity size={24} />} 
-          color="from-blue-600 to-cyan-600"
-        />
-        <SummaryCard 
-          label="Finalizadas" 
-          value={stats.completed} 
-          icon={<CheckCircle2 size={24} />} 
-          color="from-emerald-600 to-teal-600"
-        />
-        <SummaryCard 
-          label="Por Turno" 
-          value={user?.shift || "---"} 
-          icon={<Clock size={24} />} 
-          color="from-slate-700 to-slate-800"
-        />
-      </div>
-
-      {/* 🔹 3. PROGRESSO (largura total) */}
+      {/* 🔹 3. PROGRESSO */}
       <Card className="p-8 relative overflow-hidden bg-white/[0.02]">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
             <div className="space-y-2">
@@ -232,55 +324,82 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
             </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-4 relative">
             <AnimatePresence mode="popLayout">
-                {ranking.length > 0 ? ranking.map((item: any, idx) => {
-                    const percentage = Math.round((item.total / topScore) * 100);
-                    const isTop1 = idx === 0;
-                    
-                    return (
-                        <motion.div
-                            key={item.id}
-                            layout
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ delay: idx * 0.05 }}
-                        >
-                            <Card className={`relative overflow-hidden group hover:scale-[1.01] transition-all duration-300 ${
-                                isTop1 ? 'border-amber-500/30 bg-amber-500/[0.03] p-8' : 'border-white/5 bg-white/[0.01] p-6'
-                            }`}>
-                                {isTop1 && (
-                                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-transparent pointer-events-none" />
-                                )}
-                                
-                                <div className="flex items-center gap-6 relative z-10">
-                                    {/* Position / Medal */}
-                                    <div className="flex flex-col items-center justify-center w-12 shrink-0">
-                                        {idx === 0 ? <span className="text-4xl">🥇</span> :
-                                         idx === 1 ? <span className="text-3xl">🥈</span> :
-                                         idx === 2 ? <span className="text-2xl">🥉</span> :
-                                         <span className="text-lg font-black text-white/20">#{idx + 1}</span>}
-                                    </div>
-
-                                    {/* Info */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div>
-                                                <h4 className={`font-black uppercase tracking-tighter truncate ${
-                                                    isTop1 ? 'text-2xl text-white' : 'text-lg text-white/80'
+                {!config.rankingVisible ? (
+                    <motion.div
+                        key="locked-ranking"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="py-32 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-white/[0.01] relative overflow-hidden group"
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-red-500/[0.02] to-transparent animate-pulse" />
+                        <div className="relative z-10">
+                            <div className="w-20 h-20 rounded-[2.5rem] bg-white/5 flex items-center justify-center text-white/10 mx-auto mb-6 border border-white/5 group-hover:border-red-500/20 group-hover:text-red-500/40 transition-all duration-500">
+                                <Clock size={40} className="group-hover:rotate-12 transition-transform" />
+                            </div>
+                            <h4 className="text-xl font-black uppercase tracking-[0.3em] text-white/20 group-hover:text-white/40 transition-colors">Ranking em Modo Privado</h4>
+                            <p className="text-[10px] font-black uppercase text-white/5 tracking-[0.5em] mt-2">Visibilidade Global Desativada no Gestor</p>
+                            <div className="mt-8">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/5">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                    <span className="text-[8px] font-black text-white/20 uppercase tracking-widest">Acesso Restrito</span>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                ) : ranking.length > 0 ? (
+                    ranking.map((item: any, idx) => {
+                        const percentage = Math.round((item.total / topScore) * 100);
+                        const isTop1 = idx === 0;
+                        
+                        return (
+                            <motion.div
+                                key={item.id}
+                                layout
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{ delay: idx * 0.05 }}
+                            >
+                                <Card className={`relative overflow-hidden group hover:scale-[1.01] transition-all duration-300 ${
+                                    isTop1 
+                                        ? "bg-amber-500/[0.03] border-amber-500/20 shadow-[0_0_40px_rgba(245,158,11,0.05)]" 
+                                        : "bg-white/[0.02] border-white/5"
+                                }`}>
+                                    {/* Glass reflection effect for TOP 1 */}
+                                    {isTop1 && (
+                                        <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/[0.05] via-transparent to-transparent pointer-events-none" />
+                                    )}
+                                    
+                                    <div className="p-8 relative z-10">
+                                        <div className="flex items-center justify-between gap-6 mb-6">
+                                            <div className="flex items-center gap-6">
+                                                {/* Medal / Position */}
+                                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl shadow-xl transition-transform group-hover:scale-110 ${
+                                                    idx === 0 ? "bg-amber-500 text-black shadow-amber-500/20" :
+                                                    idx === 1 ? "bg-slate-300 text-black shadow-slate-300/10" :
+                                                    idx === 2 ? "bg-orange-400 text-black shadow-orange-400/10" :
+                                                    "bg-white/5 text-white/40 border border-white/5"
                                                 }`}>
-                                                    {item.name}
-                                                </h4>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                                        item.shift === 'Turno 1' ? 'text-emerald-500' :
-                                                        item.shift === 'Turno 2' ? 'text-indigo-500' : 'text-orange-500'
-                                                    }`}>
-                                                        {item.shift}
-                                                    </span>
-                                                    <span className="w-1 h-1 rounded-full bg-white/10" />
-                                                    <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Colaborador</span>
+                                                    {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                                                </div>
+                                                
+                                                <div>
+                                                    <h4 className={`text-2xl font-black uppercase tracking-tighter leading-none mb-2 ${isTop1 ? 'text-white' : 'text-white/80'}`}>
+                                                        {item.name}
+                                                    </h4>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                                            item.shift === 'Turno 1' ? 'text-emerald-500' :
+                                                            item.shift === 'Turno 2' ? 'text-indigo-500' : 'text-orange-500'
+                                                        }`}>
+                                                            {item.shift}
+                                                        </span>
+                                                        <span className="w-1 h-1 rounded-full bg-white/10" />
+                                                        <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Colaborador</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div className="text-right">
@@ -305,11 +424,11 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
                                             />
                                         </div>
                                     </div>
-                                </div>
-                            </Card>
-                        </motion.div>
-                    );
-                }) : (
+                                </Card>
+                            </motion.div>
+                        );
+                    })
+                ) : (
                     <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-[2rem] bg-white/[0.01]">
                         <p className="text-[10px] font-black uppercase text-white/10 tracking-[0.4em]">Aguardando dados de produção...</p>
                     </div>
@@ -480,9 +599,9 @@ export function ManagerHomeView({ user, tasks, config, onUpdateTaskStatus }: Man
 }
 
 const AnimatedNumber = ({ value, className }: { value: number, className?: string }) => {
-    const [displayValue, setDisplayValue] = React.useState(0);
+    const [displayValue, setDisplayValue] = useState(0);
 
-    React.useEffect(() => {
+    useEffect(() => {
         let start = displayValue;
         const end = value;
         const duration = 1000;
@@ -506,32 +625,23 @@ const AnimatedNumber = ({ value, className }: { value: number, className?: strin
     return <span className={className}>{displayValue.toLocaleString()}</span>;
 };
 
-const SummaryCard = ({ label, value, icon, color, highlight = false }: any) => (
-  <motion.div
-    whileHover={{ y: -5 }}
-    className={`p-8 rounded-[2rem] bg-gradient-to-br ${color} ${
-      highlight ? "ring-2 ring-white/20 shadow-[0_20px_40px_rgba(0,0,0,0.4)]" : "shadow-xl"
-    } relative overflow-hidden group`}
-  >
-    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-        {icon}
-    </div>
-    <div className="space-y-4 relative z-10">
-        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">{label}</h3>
-        <p className="text-5xl font-black font-mono tracking-tighter text-white">
-            {typeof value === 'number' ? (
-                <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                >
-                    {value}
-                </motion.span>
-            ) : value}
-        </p>
-    </div>
-    <div className="mt-6 flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-        <span className="text-[8px] font-black text-white/40 uppercase tracking-widest">Monitoramento Ativo</span>
-    </div>
-  </motion.div>
+const DailyCard = ({ label, value, sub, icon, color, active = false }: any) => (
+    <Card className={`p-8 bg-gradient-to-br ${color} rounded-[2.5rem] relative overflow-hidden group shadow-2xl`}>
+        <div className="absolute top-0 right-0 p-8 text-white/10 group-hover:scale-110 transition-transform">
+            {icon}
+        </div>
+        <div className="relative z-10 space-y-4">
+            <p className="text-[10px] font-black uppercase text-white/60 tracking-[0.3em]">{label}</p>
+            <div className="flex items-baseline gap-2">
+                <span className="text-6xl font-black font-mono tracking-tighter text-white">{value}</span>
+                <span className="text-xs font-black uppercase text-white/40 tracking-widest">{sub}</span>
+            </div>
+            {active && (
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                    <span className="text-[8px] font-black text-white/60 uppercase tracking-widest">Monitoramento Ativo</span>
+                </div>
+            )}
+        </div>
+    </Card>
 );
