@@ -18,7 +18,16 @@ import {
   Clock,
   ArrowRightLeft,
   Activity,
-  TrendingUp
+  TrendingUp,
+  Map,
+  Box,
+  Layers,
+  Zap,
+  Lock,
+  Globe,
+  RefreshCw,
+  Server,
+  AlertTriangle
 } from "lucide-react";
 import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db, firebaseConfig, getSecondaryAuth, createSecondaryUser } from "../../../lib/firebase";
@@ -45,7 +54,8 @@ export function ManagementView({
   users: storeUsers, 
   sectors, 
   config, 
-  onUpdateConfig 
+  onUpdateConfig,
+  onResetSystem 
 }: ManagementViewProps) {
   const [employees, setEmployees] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
@@ -151,13 +161,13 @@ export function ManagementView({
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20 max-w-[1600px] mx-auto">
       {/* Tab Navigation */}
-      <div className="flex bg-white/5 p-1.5 rounded-2xl border border-white/5 overflow-x-auto no-scrollbar max-w-fit">
+      <div className="flex bg-white/5 p-1.5 rounded-2xl border border-white/5 overflow-x-auto no-scrollbar max-w-fit shadow-2xl">
         {([
           { id: "users", label: "Usuários", icon: <UsersIcon size={14} /> },
-          { id: "structure", label: "Estrutura", icon: <Settings size={14} /> },
+          { id: "structure", label: "Estrutura", icon: <Layers size={14} /> },
           { id: "ranking", label: "Ranking", icon: <BarChart3 size={14} /> },
           { id: "security", label: "Segurança", icon: <ShieldCheck size={14} /> },
-          { id: "settings", label: "Sistema", icon: <Bell size={14} /> }
+          { id: "settings", label: "Sistema", icon: <Settings size={14} /> }
         ] as any[]).map(tab => (
           <button 
             key={tab.id}
@@ -175,6 +185,7 @@ export function ManagementView({
 
       {activeSubTab === "users" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+          {/* USER CONTENT (Already updated in last turn) */}
           <div className="lg:col-span-4">
             <Card className="p-8 sticky top-8 bg-white/[0.02] border-white/5 rounded-[2rem]">
                 <div className="flex items-center justify-between mb-8">
@@ -386,287 +397,489 @@ export function ManagementView({
       )}
 
       {activeSubTab === "structure" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <Card className="p-8">
-            <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500">
-                    <Settings size={20} />
-                </div>
-                <h4 className="text-xl font-black uppercase tracking-tighter text-white">{editingSector ? "Editar Setor" : "Novo Setor"}</h4>
+        <div className="space-y-8">
+            {/* Quick Stats Header */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatMiniCard icon={<Box className="text-indigo-500" />} label="Setores Ativos" value={sectors.length} />
+                <StatMiniCard icon={<Map className="text-emerald-500" />} label="Rotas/Clientes" value={clients.length} />
+                <StatMiniCard icon={<Zap className="text-amber-500" />} label="Cargas Hoje" value={config.dailyTarget || 0} />
+                <StatMiniCard icon={<Activity className="text-blue-500" />} label="Operação" value="100%" />
             </div>
-            <form onSubmit={editingSector ? (async (e: any) => {
-              e.preventDefault();
-              await updateDoc(doc(db, "sectors", editingSector.id), { name: e.target.name.value, unit: e.target.unit.value });
-              setEditingSector(null);
-            }) : (async (e: any) => {
-              e.preventDefault();
-              await addDoc(collection(db, "sectors"), { name: e.target.name.value, unit: e.target.unit.value });
-              e.target.reset();
-            })} className="space-y-6">
-              <input name="name" defaultValue={editingSector?.name} placeholder="Ex: Separação" required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-indigo-500 transition-all text-white font-bold" />
-              <select name="unit" defaultValue={editingSector?.unit || "volumes"} className="w-full bg-[#131926] border border-white/10 rounded-2xl px-6 py-4 outline-none text-white font-bold focus:border-indigo-500 transition-all appearance-none cursor-pointer">
-                <option value="caixas">Caixas</option>
-                <option value="volumes">Volumes</option>
-                <option value="pallets">Pallets</option>
-                <option value="cargas">Cargas</option>
-              </select>
-              <Button type="submit" className="w-full py-4 uppercase tracking-widest font-black">{editingSector ? "Salvar" : "Criar Setor"}</Button>
-              {editingSector && <button type="button" onClick={() => setEditingSector(null)} className="w-full text-[10px] font-black uppercase text-white/20 tracking-widest pt-2">Cancelar Edição</button>}
-            </form>
-            <div className="mt-10 space-y-3">
-              {sectors.map((s: any) => (
-                <div key={s.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group hover:border-white/10 transition-all">
-                  <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                      <span className="text-sm font-black uppercase text-white/80">{s.name} <span className="text-[10px] text-white/20 ml-2">({s.unit})</span></span>
-                  </div>
-                  <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-all">
-                    <button onClick={() => setEditingSector(s)} className="text-[10px] text-indigo-500 font-black tracking-widest uppercase hover:underline">EDITAR</button>
-                    <button onClick={async () => {
-                      if(confirm("Deseja excluir este setor?")) {
-                        await deleteDoc(doc(db, "sectors", s.id));
-                      }
-                    }} className="text-[10px] text-red-500 font-black tracking-widest uppercase hover:underline">EXCLUIR</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
 
-          <Card className="p-8">
-            <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-                    <TrendingUp size={20} />
-                </div>
-                <h4 className="text-xl font-black uppercase tracking-tighter text-white">{editingClient ? "Editar Rota" : "Nova Rota/Cliente"}</h4>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                {/* SETORES */}
+                <Card className="p-10 bg-white/[0.01] border-white/5 rounded-[2.5rem]">
+                    <div className="flex items-center justify-between mb-10">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.1)]">
+                                <Settings size={24} />
+                            </div>
+                            <div>
+                                <h4 className="text-2xl font-black uppercase tracking-tighter text-white">{editingSector ? "Editar Setor" : "Gestão de Setores"}</h4>
+                                <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Estrutura física da operação</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form onSubmit={editingSector ? (async (e: any) => {
+                    e.preventDefault();
+                    await updateDoc(doc(db, "sectors", editingSector.id), { name: e.target.name.value, unit: e.target.unit.value });
+                    setEditingSector(null);
+                    }) : (async (e: any) => {
+                    e.preventDefault();
+                    await addDoc(collection(db, "sectors"), { name: e.target.name.value, unit: e.target.unit.value });
+                    e.target.reset();
+                    })} className="space-y-6 mb-12">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <input name="name" defaultValue={editingSector?.name} placeholder="Nome do Setor (Ex: Separação)" required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-indigo-500 transition-all text-white font-bold" />
+                        <select name="unit" defaultValue={editingSector?.unit || "volumes"} className="w-full bg-[#131926] border border-white/10 rounded-2xl px-6 py-4 outline-none text-white font-bold focus:border-indigo-500 transition-all appearance-none cursor-pointer">
+                            <option value="caixas">UNIDADE: CAIXAS</option>
+                            <option value="volumes">UNIDADE: VOLUMES</option>
+                            <option value="pallets">UNIDADE: PALLETS</option>
+                            <option value="cargas">UNIDADE: CARGAS</option>
+                        </select>
+                    </div>
+                    <Button type="submit" className="w-full py-5 rounded-2xl uppercase tracking-[0.2em] font-black bg-indigo-500 hover:bg-indigo-600 shadow-[0_10px_20px_rgba(99,102,241,0.2)]">
+                        {editingSector ? "Salvar Alterações" : "Adicionar Novo Setor"}
+                    </Button>
+                    {editingSector && <button type="button" onClick={() => setEditingSector(null)} className="w-full text-[10px] font-black uppercase text-white/20 tracking-widest pt-2 hover:text-white transition-colors">Cancelar Edição</button>}
+                    </form>
+
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+                    {sectors.map((s: any) => (
+                        <div key={s.id} className="flex items-center justify-between p-5 bg-white/[0.02] rounded-2xl border border-white/5 group hover:border-indigo-500/30 transition-all">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/20 group-hover:text-indigo-500 transition-colors">
+                                <Box size={20} />
+                            </div>
+                            <div>
+                                <span className="text-sm font-black uppercase text-white/80 block leading-none mb-1">{s.name}</span>
+                                <span className="text-[10px] text-white/20 uppercase font-black tracking-widest">Monitorando {s.unit}</span>
+                            </div>
+                        </div>
+                        <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => setEditingSector(s)} className="p-2 text-white/20 hover:text-indigo-500 transition-colors"><Edit3 size={16} /></button>
+                            <button onClick={async () => {
+                            if(confirm("Deseja excluir este setor?")) {
+                                await deleteDoc(doc(db, "sectors", s.id));
+                            }
+                            }} className="p-2 text-white/20 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                        </div>
+                        </div>
+                    ))}
+                    </div>
+                </Card>
+
+                {/* ROTAS / CLIENTES */}
+                <Card className="p-10 bg-white/[0.01] border-white/5 rounded-[2.5rem]">
+                    <div className="flex items-center justify-between mb-10">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                                <TrendingUp size={24} />
+                            </div>
+                            <div>
+                                <h4 className="text-2xl font-black uppercase tracking-tighter text-white">{editingClient ? "Editar Rota" : "Rotas & Clientes"}</h4>
+                                <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Destinos da expedição</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form onSubmit={async (e: any) => {
+                        e.preventDefault();
+                        const name = e.target.name.value;
+                        if (editingClient) {
+                            await updateDoc(doc(db, "clients", editingClient.id), { name });
+                            setEditingClient(null);
+                        } else {
+                            await addDoc(collection(db, "clients"), { name });
+                        }
+                        e.target.reset();
+                    }} className="space-y-6 mb-12">
+                    <input name="name" defaultValue={editingClient?.name} placeholder="Nome da Rota ou Cliente (Ex: Rota Sul)" required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-emerald-500 transition-all text-white font-bold" />
+                    <Button type="submit" className="w-full py-5 rounded-2xl uppercase tracking-[0.2em] font-black bg-emerald-500 hover:bg-emerald-600 shadow-[0_10px_20px_rgba(16,185,129,0.2)]">
+                        {editingClient ? "Salvar Alterações" : "Adicionar Nova Rota"}
+                    </Button>
+                    {editingClient && <button type="button" onClick={() => setEditingClient(null)} className="w-full text-[10px] font-black uppercase text-white/20 tracking-widest pt-2 hover:text-white transition-colors">Cancelar Edição</button>}
+                    </form>
+
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+                    {clients.map((c: any) => (
+                        <div key={c.id} className="flex items-center justify-between p-5 bg-white/[0.02] rounded-2xl border border-white/5 group hover:border-emerald-500/30 transition-all">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/20 group-hover:text-emerald-500 transition-colors">
+                                <Map size={20} />
+                            </div>
+                            <div>
+                                <span className="text-sm font-black uppercase text-white/80 block leading-none">{c.name}</span>
+                            </div>
+                        </div>
+                        <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => setEditingClient(c)} className="p-2 text-white/20 hover:text-indigo-500 transition-colors"><Edit3 size={16} /></button>
+                            <button onClick={async () => {
+                            if(confirm("Deseja excluir esta rota?")) {
+                                await deleteDoc(doc(db, "clients", c.id));
+                            }
+                            }} className="p-2 text-white/20 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                        </div>
+                        </div>
+                    ))}
+                    </div>
+                </Card>
             </div>
-            <form onSubmit={async (e: any) => {
-                e.preventDefault();
-                const name = e.target.name.value;
-                if (editingClient) {
-                    await updateDoc(doc(db, "clients", editingClient.id), { name });
-                    setEditingClient(null);
-                } else {
-                    await addDoc(collection(db, "clients"), { name });
-                }
-                e.target.reset();
-            }} className="space-y-6">
-              <input name="name" defaultValue={editingClient?.name} placeholder="Ex: Rota Sul" required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-indigo-500 transition-all text-white font-bold" />
-              <Button type="submit" className="w-full py-4 uppercase tracking-widest font-black">{editingClient ? "Salvar" : "Criar Rota"}</Button>
-              {editingClient && <button type="button" onClick={() => setEditingClient(null)} className="w-full text-[10px] font-black uppercase text-white/20 tracking-widest pt-2">Cancelar Edição</button>}
-            </form>
-            <div className="mt-10 space-y-3">
-              {clients.map((c: any) => (
-                <div key={c.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group hover:border-white/10 transition-all">
-                  <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                      <span className="text-sm font-black uppercase text-white/80">{c.name}</span>
-                  </div>
-                  <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-all">
-                    <button onClick={() => setEditingClient(c)} className="text-[10px] text-indigo-500 font-black tracking-widest uppercase hover:underline">EDITAR</button>
-                    <button onClick={async () => {
-                      if(confirm("Deseja excluir esta rota?")) {
-                        await deleteDoc(doc(db, "clients", c.id));
-                      }
-                    }} className="text-[10px] text-red-500 font-black tracking-widest uppercase hover:underline">EXCLUIR</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
       )}
 
       {activeSubTab === "ranking" && (
-        <Card className="p-10 max-w-2xl">
-          <div className="flex items-center gap-3 mb-10">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500">
-                  <BarChart3 size={24} />
-              </div>
-              <h4 className="text-2xl font-black uppercase tracking-tighter text-white">Visibilidade do Ranking</h4>
-          </div>
-          <div className="space-y-12">
-            <div className="flex items-center justify-between p-8 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-              <div>
-                <p className="text-lg font-black text-white uppercase tracking-tight">Ranking Visível</p>
-                <p className="text-[10px] text-white/40 uppercase font-black tracking-widest">Permite que funcionários vejam os resultados.</p>
-              </div>
-              <button 
-                onClick={() => onUpdateConfig({ rankingVisible: !config.rankingVisible })}
-                className={`w-16 h-10 rounded-full p-1 transition-all ${config.rankingVisible ? "bg-[#6366f1]" : "bg-white/10"}`}
-              >
-                <div className={`w-8 h-8 rounded-full bg-white transition-all ${config.rankingVisible ? "translate-x-6" : "translate-x-0"} shadow-lg`} />
-              </button>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <Card className="p-12 bg-white/[0.01] border-white/5 rounded-[3rem] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-12 text-white/[0.02] group-hover:text-amber-500/5 transition-colors">
+                    <BarChart3 size={200} />
+                </div>
+                <div className="relative">
+                    <div className="flex items-center gap-4 mb-12">
+                        <div className="w-16 h-16 rounded-[2rem] bg-amber-500/10 flex items-center justify-center text-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.1)]">
+                            <Globe size={32} />
+                        </div>
+                        <div>
+                            <h4 className="text-3xl font-black uppercase tracking-tighter text-white">Visibilidade Global</h4>
+                            <p className="text-xs text-white/30 uppercase font-black tracking-[0.2em]">Controle o que a equipe visualiza</p>
+                        </div>
+                    </div>
 
-            <div className="space-y-6">
-              <h5 className="text-[10px] font-black uppercase text-white/30 tracking-[0.3em] ml-1">Turnos Monitorados no Ranking</h5>
-              <div className="flex flex-wrap gap-4">
-                {["Turno 1", "Turno 2", "Turno 3"].map((s: any) => (
-                  <button 
-                    key={s}
-                    onClick={() => {
-                      const newShifts = config.rankingShifts.includes(s)
-                        ? config.rankingShifts.filter((x: any) => x !== s)
-                        : [...config.rankingShifts, s];
-                      onUpdateConfig({ rankingShifts: newShifts });
-                    }}
-                    className={`px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${config.rankingShifts.includes(s) ? "bg-[#6366f1] border-[#6366f1] text-white shadow-[0_10px_20px_rgba(99,102,241,0.2)]" : "border-white/5 text-white/20 hover:border-white/20"}`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
+                    <div className="space-y-12">
+                        <div className="flex items-center justify-between p-10 bg-white/[0.03] border border-white/10 rounded-[2.5rem] hover:bg-white/[0.05] transition-all">
+                            <div className="flex items-center gap-6">
+                                <div className={`w-4 h-4 rounded-full ${config.rankingVisible ? 'bg-green-500 animate-pulse shadow-[0_0_15px_rgba(34,197,94,0.5)]' : 'bg-red-500'}`} />
+                                <div>
+                                    <p className="text-xl font-black text-white uppercase tracking-tight">Ranking Público</p>
+                                    <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mt-1">Exibe resultados para todos os funcionários.</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => onUpdateConfig({ rankingVisible: !config.rankingVisible })}
+                                className={`w-20 h-12 rounded-full p-1.5 transition-all relative ${config.rankingVisible ? "bg-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)]" : "bg-white/10"}`}
+                            >
+                                <div className={`w-9 h-9 rounded-full bg-white transition-all transform ${config.rankingVisible ? "translate-x-8" : "translate-x-0"} shadow-2xl flex items-center justify-center text-[8px] font-black text-black`}>
+                                    {config.rankingVisible ? "ON" : "OFF"}
+                                </div>
+                            </button>
+                        </div>
+
+                        <div className="space-y-6">
+                            <h5 className="text-[10px] font-black uppercase text-white/30 tracking-[0.4em] ml-2 flex items-center gap-2">
+                                <Filter size={12} /> Turnos Ativos no Monitoramento
+                            </h5>
+                            <div className="grid grid-cols-3 gap-4">
+                                {["Turno 1", "Turno 2", "Turno 3"].map((s: any) => {
+                                    const isActive = config.rankingShifts.includes(s);
+                                    return (
+                                        <button 
+                                            key={s}
+                                            onClick={() => {
+                                                const newShifts = isActive
+                                                    ? config.rankingShifts.filter((x: any) => x !== s)
+                                                    : [...config.rankingShifts, s];
+                                                onUpdateConfig({ rankingShifts: newShifts });
+                                            }}
+                                            className={`p-6 rounded-[2rem] text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all flex flex-col items-center gap-3 ${
+                                                isActive 
+                                                    ? "bg-gradient-to-br from-amber-500 to-orange-600 border-amber-500 text-white shadow-xl scale-105" 
+                                                    : "border-white/5 text-white/20 hover:border-white/20"
+                                            }`}
+                                        >
+                                            <Clock size={20} />
+                                            {s}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+
+            <Card className="p-12 bg-white/[0.01] border-white/5 rounded-[3rem] flex flex-col justify-center items-center text-center">
+                <div className="w-24 h-24 rounded-[2.5rem] bg-white/5 flex items-center justify-center text-white/10 mb-8 border border-white/5">
+                    <Activity size={48} />
+                </div>
+                <h4 className="text-2xl font-black uppercase tracking-tighter text-white mb-4">Métricas do Ranking</h4>
+                <p className="text-sm text-white/30 max-w-xs leading-relaxed uppercase font-black tracking-widest text-[10px]">
+                    O ranking baseia-se na produtividade líquida por hora, considerando apenas as remessas finalizadas dentro dos turnos selecionados.
+                </p>
+                <div className="mt-10 grid grid-cols-2 gap-8 w-full">
+                    <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5">
+                        <p className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em] mb-1">Atualização</p>
+                        <p className="text-lg font-black text-white">REAL-TIME</p>
+                    </div>
+                    <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5">
+                        <p className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em] mb-1">Algoritmo</p>
+                        <p className="text-lg font-black text-white">OP-RANK v2</p>
+                    </div>
+                </div>
+            </Card>
+        </div>
       )}
 
       {activeSubTab === "security" && (
-        <Card className="p-10">
-          <div className="flex items-center gap-4 mb-10">
-            <div className="w-14 h-14 rounded-[2rem] bg-[#6366f1]/10 flex items-center justify-center text-[#6366f1]">
-               <ShieldCheck size={28} />
-            </div>
-            <div>
-               <h3 className="text-3xl font-black uppercase tracking-tighter">Controle de Segurança</h3>
-               <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Gerencie permissões de acesso ao sistema</p>
-            </div>
-          </div>
-
-          <div className="space-y-10">
-            <div className="flex items-center justify-between p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem]">
-              <div>
-                <p className="text-xl font-black text-white uppercase tracking-tight">Restringir por E-mail</p>
-                <p className="text-xs font-bold text-white/40 leading-relaxed max-w-lg mt-1">
-                  Quando ativo, apenas usuários com e-mails explicitamente autorizados poderão efetuar login. 
-                  <span className="text-[#6366f1] block mt-1 uppercase font-black text-[10px] tracking-widest">Administradores possuem acesso irrestrito.</span>
-                </p>
-              </div>
-              <button 
-                onClick={() => onUpdateConfig({ restrictAccess: !config.restrictAccess })}
-                className={`w-16 h-10 rounded-full p-1 transition-all ${config.restrictAccess ? "bg-[#6366f1]" : "bg-white/10"}`}
-              >
-                <div className={`w-8 h-8 rounded-full bg-white transition-all ${config.restrictAccess ? "translate-x-6" : "translate-x-0"} shadow-lg`} />
-              </button>
-            </div>
-
-            <div className="space-y-6">
-               <h4 className="text-[10px] uppercase font-black text-white/30 tracking-[0.3em] ml-1">Whitelist de E-mails Autorizados</h4>
-               
-               <form 
-                 onSubmit={(e: any) => {
-                   e.preventDefault();
-                   const email = e.target.email.value.toLowerCase().trim();
-                   if (!email) return;
-                   if (config.allowedEmails?.includes(email)) {
-                     alert("E-mail já está na lista.");
-                     return;
-                   }
-                   const newList = [...(config.allowedEmails || []), email];
-                   onUpdateConfig({ allowedEmails: newList });
-                   e.target.reset();
-                 }}
-                 className="flex gap-4"
-               >
-                 <input 
-                   name="email"
-                   type="email"
-                   placeholder="colaborador@operarank.com"
-                   className="flex-1 bg-white/5 border border-white/10 rounded-[1.5rem] px-8 py-5 outline-none focus:border-[#6366f1] transition-all text-white font-bold"
-                 />
-                 <Button type="submit" className="shrink-0 px-10 py-5 rounded-[1.5rem] uppercase font-black tracking-widest">Adicionar</Button>
-               </form>
-
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
-                 {(config.allowedEmails || []).map(email => (
-                   <div key={email} className="flex justify-between items-center p-5 bg-white/5 border border-white/5 rounded-2xl group hover:border-[#6366f1]/30 transition-all">
-                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/20">
-                           <User size={16} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+            <div className="lg:col-span-2 space-y-8">
+                <Card className="p-12 bg-white/[0.01] border-white/5 rounded-[3rem]">
+                    <div className="flex items-center gap-6 mb-12">
+                        <div className="w-16 h-16 rounded-[2.5rem] bg-[#6366f1]/10 flex items-center justify-center text-[#6366f1] shadow-[0_0_30px_rgba(99,102,241,0.15)] border border-[#6366f1]/20 animate-pulse">
+                            <ShieldCheck size={32} />
                         </div>
-                        <span className="text-sm font-bold text-white/80">{email}</span>
-                     </div>
-                     <button 
-                        onClick={() => {
-                          const newList = config.allowedEmails?.filter(e => e !== email);
-                          onUpdateConfig({ allowedEmails: newList });
-                        }}
-                        className="text-white/5 group-hover:text-red-500 transition-colors p-2"
-                     >
-                        <Trash2 size={20} />
-                     </button>
-                   </div>
-                 ))}
-                 {(config.allowedEmails || []).length === 0 && (
-                   <div className="col-span-full py-20 text-center border-2 border-dashed border-white/5 rounded-[2rem] bg-white/[0.01]">
-                     <p className="text-[10px] uppercase font-black text-white/10 tracking-[0.5em] italic">Lista de autorização vazia</p>
-                   </div>
-                 )}
-               </div>
+                        <div>
+                            <h3 className="text-4xl font-black uppercase tracking-tighter text-white leading-none mb-2">Firewall de Acesso</h3>
+                            <p className="text-[10px] text-white/30 uppercase font-black tracking-[0.3em]">Gestão de identidades autorizadas</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-12">
+                        <div className="flex items-center justify-between p-10 bg-indigo-500/[0.02] border border-indigo-500/10 rounded-[3rem] group hover:bg-indigo-500/[0.05] transition-all">
+                            <div className="max-w-md">
+                                <p className="text-2xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+                                    {config.restrictAccess ? <Lock size={20} className="text-indigo-500" /> : <Globe size={20} className="text-white/20" />}
+                                    Restrição por E-mail
+                                </p>
+                                <p className="text-xs font-bold text-white/40 leading-relaxed mt-2 uppercase tracking-widest text-[9px]">
+                                    Bloqueia o login de qualquer usuário que não esteja na lista de permissões. 
+                                    <span className="text-indigo-400 block mt-1 font-black">Admins e Gestores possuem bypass automático.</span>
+                                </p>
+                            </div>
+                            <button 
+                                onClick={() => onUpdateConfig({ restrictAccess: !config.restrictAccess })}
+                                className={`w-24 h-14 rounded-full p-1.5 transition-all relative ${config.restrictAccess ? "bg-indigo-500 shadow-[0_0_40px_rgba(99,102,241,0.4)]" : "bg-white/10"}`}
+                            >
+                                <div className={`w-11 h-11 rounded-full bg-white transition-all transform ${config.restrictAccess ? "translate-x-10" : "translate-x-0"} shadow-2xl flex items-center justify-center`}>
+                                    {config.restrictAccess ? <CheckCircle2 className="text-indigo-500" size={24} /> : <XCircle className="text-white/20" size={24} />}
+                                </div>
+                            </button>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="flex items-center justify-between ml-2">
+                                <h4 className="text-[10px] uppercase font-black text-white/30 tracking-[0.4em]">Whitelist de Colaboradores</h4>
+                                <span className="text-[8px] font-black bg-indigo-500/10 text-indigo-500 px-3 py-1 rounded-full border border-indigo-500/20">{config.allowedEmails?.length || 0} AUTORIZADOS</span>
+                            </div>
+                            
+                            <form 
+                                onSubmit={(e: any) => {
+                                e.preventDefault();
+                                const email = e.target.email.value.toLowerCase().trim();
+                                if (!email) return;
+                                if (config.allowedEmails?.includes(email)) {
+                                    alert("E-mail já está na lista.");
+                                    return;
+                                }
+                                const newList = [...(config.allowedEmails || []), email];
+                                onUpdateConfig({ allowedEmails: newList });
+                                e.target.reset();
+                                }}
+                                className="flex gap-4"
+                            >
+                                <div className="flex-1 relative group">
+                                    <User size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-indigo-500 transition-colors" />
+                                    <input 
+                                        name="email"
+                                        type="email"
+                                        placeholder="colaborador@operarank.com"
+                                        className="w-full bg-white/5 border border-white/10 rounded-[2rem] pl-16 pr-8 py-6 outline-none focus:border-indigo-500 transition-all text-white font-bold"
+                                    />
+                                </div>
+                                <Button type="submit" className="shrink-0 px-12 py-6 rounded-[2rem] uppercase font-black tracking-widest bg-white text-indigo-900 hover:scale-105 transition-all">AUTORIZAR</Button>
+                            </form>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-10">
+                                <AnimatePresence mode="popLayout">
+                                    {(config.allowedEmails || []).map(email => (
+                                    <motion.div 
+                                        key={email}
+                                        layout
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.9 }}
+                                        className="flex justify-between items-center p-6 bg-white/[0.02] border border-white/5 rounded-3xl group hover:border-indigo-500/30 transition-all"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/5 flex items-center justify-center text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
+                                                <User size={20} />
+                                            </div>
+                                            <div>
+                                                <span className="text-sm font-black text-white/80 block leading-none mb-1">{email.split('@')[0]}</span>
+                                                <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">{email.split('@')[1]}</span>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => {
+                                                const newList = config.allowedEmails?.filter((e: any) => e !== email);
+                                                onUpdateConfig({ allowedEmails: newList });
+                                            }}
+                                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white/5 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                                        >
+                                            <Trash2 size={20} />
+                                        </button>
+                                    </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                                {(config.allowedEmails || []).length === 0 && (
+                                <div className="col-span-full py-24 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-white/[0.01]">
+                                    <Lock size={48} className="mx-auto text-white/5 mb-6" />
+                                    <p className="text-[10px] uppercase font-black text-white/10 tracking-[0.5em] italic">Segurança Desativada (Lista Vazia)</p>
+                                </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
             </div>
-          </div>
-        </Card>
+
+            <div className="space-y-8">
+                <Card className="p-10 bg-white/[0.01] border-white/5 rounded-[3rem] text-center">
+                    <div className="w-20 h-20 rounded-[2.5rem] bg-amber-500/10 flex items-center justify-center text-amber-500 mx-auto mb-8 border border-amber-500/20">
+                        <AlertTriangle size={40} />
+                    </div>
+                    <h4 className="text-xl font-black uppercase tracking-tighter text-white mb-4">Modo Restrito</h4>
+                    <p className="text-[10px] text-white/30 uppercase font-black tracking-widest leading-relaxed">
+                        Ao ativar o Modo Restrito, certifique-se de que sua própria conta está na lista ou que você possui cargo de Administrador para não perder o acesso ao painel.
+                    </p>
+                </Card>
+
+                <Card className="p-10 bg-gradient-to-br from-[#6366f1]/10 to-[#a855f7]/10 border-white/5 rounded-[3rem]">
+                    <h4 className="text-xs font-black uppercase tracking-[0.3em] text-[#6366f1] mb-6">Auditoria de Logins</h4>
+                    <div className="space-y-4">
+                        <LogItem label="Lucas Admin" time="Há 2 min" action="LOGIN" />
+                        <LogItem label="Sistema" time="Há 15 min" action="AUTO-SYNC" />
+                        <LogItem label="Config" time="Há 1 hora" action="UPDATE" />
+                    </div>
+                </Card>
+            </div>
+        </div>
       )}
 
       {activeSubTab === "settings" && (
-        <Card className="p-10 max-w-3xl">
-          <div className="flex items-center gap-4 mb-10">
-              <div className="w-14 h-14 rounded-[2rem] bg-indigo-500/10 flex items-center justify-center text-indigo-500">
-                  <Activity size={28} />
-              </div>
-              <h4 className="text-3xl font-black uppercase tracking-tighter text-white">Configurações Gerais</h4>
-          </div>
-          
-          <div className="space-y-12">
-            <div className="flex items-center justify-between p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem]">
-              <div>
-                <p className="text-xl font-black text-white uppercase tracking-tight">Notificações em Tempo Real</p>
-                <p className="text-xs font-bold text-white/40 mt-1">Alertas instantâneos via push e Firebase Cloud Messaging.</p>
-              </div>
-              <button 
-                onClick={() => onUpdateConfig({ notificationsEnabled: !config.notificationsEnabled })}
-                className={`w-16 h-10 rounded-full p-1 transition-all ${config.notificationsEnabled ? "bg-[#6366f1]" : "bg-white/10"}`}
-              >
-                <div className={`w-8 h-8 rounded-full bg-white transition-all ${config.notificationsEnabled ? "translate-x-6" : "translate-x-0"} shadow-lg`} />
-              </button>
-            </div>
-
-            {config.notificationsEnabled && (
-                <div className="p-8 bg-indigo-500/10 border border-indigo-500/20 rounded-[2rem]">
-                    <div className="flex items-center gap-4 mb-4">
-                        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white">
-                            <Bell size={20} />
-                        </div>
-                        <p className="text-lg font-black text-white uppercase tracking-tight">Permissão de Sistema</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <Card className="p-12 bg-white/[0.01] border-white/5 rounded-[3rem]">
+                <div className="flex items-center gap-6 mb-12">
+                    <div className="w-16 h-16 rounded-[2.5rem] bg-indigo-500/10 flex items-center justify-center text-indigo-500 shadow-[0_0_30px_rgba(99,102,241,0.15)] border border-indigo-500/20">
+                        <Server size={32} />
                     </div>
-                    <p className="text-[10px] text-white/60 mb-8 uppercase font-black leading-relaxed tracking-widest">Para receber notificações fora do aplicativo, é necessário autorizar o navegador.</p>
-                    <Button 
-                        onClick={() => {
-                            if (!("Notification" in window)) {
-                                alert("Este navegador não suporta notificações.");
-                                return;
-                            }
-                            Notification.requestPermission().then(permission => {
-                                alert(permission === "granted" ? "Notificações autorizadas!" : "Permissão negada.");
-                            });
-                        }}
-                        className="w-full py-4 uppercase font-black tracking-[0.2em] bg-white text-indigo-600 hover:bg-white/90"
-                    >
-                        Solicitar Autorização
-                    </Button>
+                    <div>
+                        <h4 className="text-3xl font-black uppercase tracking-tighter text-white">Centro de Comando</h4>
+                        <p className="text-[10px] text-white/30 uppercase font-black tracking-[0.3em]">Parâmetros globais do sistema</p>
+                    </div>
                 </div>
-            )}
+                
+                <div className="space-y-12">
+                    <div className="flex items-center justify-between p-10 bg-white/[0.02] border border-white/5 rounded-[3rem] hover:bg-white/[0.04] transition-all group">
+                        <div>
+                            <p className="text-2xl font-black text-white uppercase tracking-tight">Push Notifications</p>
+                            <p className="text-xs font-bold text-white/40 mt-1 uppercase tracking-widest text-[9px]">Alertas instantâneos via Firebase Cloud Messaging.</p>
+                        </div>
+                        <button 
+                            onClick={() => onUpdateConfig({ notificationsEnabled: !config.notificationsEnabled })}
+                            className={`w-20 h-12 rounded-full p-1.5 transition-all relative ${config.notificationsEnabled ? "bg-indigo-500" : "bg-white/10"}`}
+                        >
+                            <div className={`w-9 h-9 rounded-full bg-white transition-all transform ${config.notificationsEnabled ? "translate-x-8" : "translate-x-0"} shadow-2xl flex items-center justify-center text-[8px] font-black text-indigo-500`}>
+                                {config.notificationsEnabled ? "ON" : "OFF"}
+                            </div>
+                        </button>
+                    </div>
 
-            <div className="pt-10 border-t border-white/5">
-                <p className="text-[10px] font-black uppercase text-white/20 tracking-[0.5em] text-center">OperaRank v4.0.0 • 2026</p>
-            </div>
-          </div>
-        </Card>
+                    {config.notificationsEnabled && (
+                        <div className="p-10 bg-indigo-500/5 border border-indigo-500/10 rounded-[3rem] text-center">
+                            <div className="flex flex-col items-center gap-6 mb-10">
+                                <div className="w-20 h-20 rounded-[2.5rem] bg-white/5 flex items-center justify-center text-white shadow-xl border border-white/5 animate-bounce-slow">
+                                    <Bell size={36} />
+                                </div>
+                                <div>
+                                    <p className="text-xl font-black text-white uppercase tracking-tight">Permissão do Navegador</p>
+                                    <p className="text-[10px] text-white/40 uppercase font-black leading-relaxed tracking-widest mt-2 max-w-sm">Para notificações em segundo plano, autorize o protocolo nas configurações do seu browser.</p>
+                                </div>
+                            </div>
+                            <Button 
+                                onClick={() => {
+                                    if (!("Notification" in window)) {
+                                        alert("Este navegador não suporta notificações.");
+                                        return;
+                                    }
+                                    Notification.requestPermission().then(permission => {
+                                        alert(permission === "granted" ? "Notificações autorizadas!" : "Permissão negada.");
+                                    });
+                                }}
+                                className="w-full py-6 rounded-[2rem] uppercase font-black tracking-[0.3em] bg-white text-indigo-600 hover:scale-105 hover:bg-white/90 transition-all shadow-2xl"
+                            >
+                                Solicitar Autorização
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </Card>
+
+            <Card className="p-12 bg-white/[0.01] border-white/5 rounded-[3rem] flex flex-col justify-between">
+                <div className="space-y-10">
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 shadow-xl border border-red-500/20">
+                            <RefreshCw size={24} />
+                        </div>
+                        <div>
+                            <h4 className="text-2xl font-black uppercase tracking-tighter text-white">Manutenção Crítica</h4>
+                            <p className="text-[10px] text-white/30 uppercase font-black tracking-widest">Ações irreversíveis do sistema</p>
+                        </div>
+                    </div>
+
+                    <div className="p-10 bg-red-500/[0.02] border border-red-500/10 rounded-[3rem]">
+                        <p className="text-lg font-black text-red-500 uppercase tracking-tight mb-3">Reiniciar Sistema</p>
+                        <p className="text-[10px] text-white/40 uppercase font-black tracking-widest leading-relaxed mb-10">
+                            Esta ação irá limpar todos os registros de tarefas, zerar o carregamento do dia e restaurar os contadores. <br/>
+                            <span className="text-red-500 font-black">Atenção: Os dados não poderão ser recuperados.</span>
+                        </p>
+                        <button 
+                            onClick={() => {
+                                if(confirm("Deseja realmente REINICIAR TODO O SISTEMA? Esta ação é irreversível.")) {
+                                    onResetSystem();
+                                }
+                            }}
+                            className="w-full py-6 rounded-[2rem] border-2 border-red-500/20 text-red-500 font-black uppercase tracking-[0.4em] hover:bg-red-500 hover:text-white transition-all shadow-xl hover:shadow-red-500/20"
+                        >
+                            EXECUTAR HARD RESET
+                        </button>
+                    </div>
+                </div>
+
+                <div className="pt-12 text-center">
+                    <p className="text-[10px] font-black uppercase text-white/10 tracking-[1em]">OPERARANK CLOUD • 4.0.0</p>
+                </div>
+            </Card>
+        </div>
       )}
     </div>
   );
 }
+
+const StatMiniCard = ({ icon, label, value }: any) => (
+    <Card className="p-6 bg-white/[0.02] border-white/5 rounded-2xl flex items-center gap-4 group hover:border-white/10 transition-all">
+        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center transition-transform group-hover:scale-110">
+            {icon}
+        </div>
+        <div>
+            <p className="text-[8px] font-black uppercase text-white/20 tracking-widest leading-none mb-1">{label}</p>
+            <p className="text-xl font-black text-white leading-none">{value}</p>
+        </div>
+    </Card>
+);
+
+const LogItem = ({ label, time, action }: any) => (
+    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+        <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-[#6366f1]" />
+            <span className="text-[10px] font-black text-white/60 uppercase">{label}</span>
+        </div>
+        <div className="flex items-center gap-4">
+            <span className="text-[8px] font-black text-[#6366f1]">{action}</span>
+            <span className="text-[8px] font-black text-white/20 uppercase">{time}</span>
+        </div>
+    </div>
+);
 
 const ActionButton = ({ icon, label, onClick, color = "hover:text-indigo-500" }: any) => (
   <button 
